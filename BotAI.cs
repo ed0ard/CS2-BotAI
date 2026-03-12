@@ -12,43 +12,61 @@ public record PatchInfo(string Name, nint Address, List<byte> OriginalBytes);
 
 public static class BotOffsets
 {
-    public const int m_gameState = 0x6038;         // CSGameState* in CCSBot (24632)
-    public const int m_isRoundOver = 0x08;         // bool in CSGameState (8)
-    public const int m_bombState = 0x0C;           // BombState in CSGameState (12)
+    public const int m_gameState   = 0x6038;   // CSGameState* in CCSBot
+    public const int m_isRoundOver = 0x08;     // bool in CSGameState
+    public const int m_bombState   = 0x0C;     // BombState in CSGameState
 }
 
 [MinimumApiVersion(304)]
 public class BotAI : BasePlugin
 {
-    public override string ModuleName => "Patches - Bot AI";
-    public override string ModuleVersion => "1.0.0";
-    public override string ModuleAuthor => "K4ryuu";
+    public override string ModuleName        => "Patches - Bot AI";
+    public override string ModuleVersion     => "1.4";
+    public override string ModuleAuthor      => "K4ryuu(updated by ed0ard)";
     public override string ModuleDescription => "Prevents bots from visiting enemy spawn at round start";
 
     private readonly List<PatchInfo> _appliedPatches = [];
 
-    private readonly Dictionary<string, (string signature, string patch, string expectedOriginal)> _patchDefinitions = new()
+    private readonly Dictionary<string, (string signature, string patch, string expectedOriginal, int patchOffset)> _patchDefinitions = new()
     {
         ["HasVisitedEnemySpawn"] = (
-            signature: "40 88 B7 05 05 00 00",          // mov BYTE PTR [rdi+0x505], sil
-            patch: "C6 87 05 05 00 00 01",              // mov BYTE PTR [rdi+0x505], 0x1
-            expectedOriginal: "40 88 B7 05 05 00 00"    // Expected original bytes
+            // mov BYTE PTR [rdi+0x520], sil
+            // was 0x505, now 0x520 after update
+            signature:        "40 88 B7 20 05 00 00",
+            patch:            "C6 87 20 05 00 00 01",
+            expectedOriginal: "40 88 B7 20 05 00 00",
+            patchOffset:      0
         ),
+
         ["GameState_Reset"] = (
-            signature: "44 89 77 ? F3",                 // mov [rdi+?], r14d
-            patch: "0F 1F 40 00",                       // 4-byte NOP
-            expectedOriginal: "44 89 77 0C"             // Expected original bytes (without wildcard)
+            // 83 7F 0C 00  →  cmp dword ptr [rdi+C], 0
+            // 74 07        →  je  +7  (skip the write)
+            // C7 47 0C 00 00 00 00  ←  patch target (NOP this)
+            // sig is 13 bytes; target starts at offset +6
+            signature:        "83 7F 0C 00 74 07 C7 47 0C 00 00 00 00",
+            patch:            "0F 1F 80 00 00 00 00",   // 7-byte NOP
+            expectedOriginal: "C7 47 0C 00 00 00 00",
+            patchOffset:      6
         ),
+
         ["Idle_IsSafeAlwaysFalse"] = (
-            signature: "74 28 33 D2 48 8B CE E8 ? ? ? ? 84 C0 75 1A",
-            patch: "EB 28",                             // JZ short +28  ->  JMP short +28
-            expectedOriginal: "74 28"                   // Check that there is actually a JZ at the address
+            signature:        "74 28 33 D2 48 8B CE E8 ? ? ? ? 84 C0 75 1A",
+            patch:            "EB 28",
+            expectedOriginal: "74 28",
+            patchOffset:      0
         ),
+
         ["EscapeFromFlames_OnEnter_NoEquipKnife"] = (
-            signature: "E8 ? ? ? ? F3 0F 10 46 ? 0F 2E C7 48 89 7E ? 7A ? 74 ? BA ? ? ? ? 48 8D 4E ? 41 B8 ? ? ? ? E8 ? ? ? ? F3 0F 11 7E ? F3 0F 10 46 ? 0F 2E C6 7A ? 74 ? BA ? ? ? ? 48 8D 4E ? 41 B8 ? ? ? ? E8 ? ? ? ? C7 46 ? ? ? ? ? 48 8B 5C 24 ? 48 8B 74 24 ? 0F 28 74 24 ? 0F 28 7C 24 ? 44 0F 28 44 24 ? 48 83 C4 ? 5F C3 CC CC CC CC CC CC CC CC 40 53",
-            patch: "90 90 90 90 90",
-            expectedOriginal: "E8 ? ? ? ?"
-        )
+            // 0F 28 F9              →  movaps xmm7, xmm1   (callee-save)
+            // 8B 52 38              →  mov    edx, [rdx+38]
+            // E8 ?? ?? ?? ??        ←  call   EquipKnife  (patch target)
+            // 8B 54 24 68 48 8B CB  →  continuation (unique fingerprint)
+            // sig_start + 6 = E8 byte
+            signature:        "0F 28 F9 8B 52 38 E8 ? ? ? ? 8B 54 24 68 48 8B CB",
+            patch:            "90 90 90 90 90",          // NOP the 5-byte call
+            expectedOriginal: "E8 ? ? ? ?",
+            patchOffset:      6
+        ),
     };
 
     public override void Load(bool hotReload)
@@ -58,13 +76,9 @@ public class BotAI : BasePlugin
         foreach (var patchName in _patchDefinitions.Keys)
         {
             if (ApplyPatch(patchName))
-            {
                 Logger.LogInformation($"{patchName} patch applied successfully!");
-            }
             else
-            {
                 Logger.LogError($"Failed to apply {patchName} patch!");
-            }
         }
 
         RegisterEventHandler<EventPlayerSpawn>((@event, info) =>
@@ -77,7 +91,10 @@ public class BotAI : BasePlugin
             if (pawn?.IsValid != true || player.Team <= CsTeam.Spectator || !pawn.BotAllowActive)
                 return HookResult.Continue;
 
-            var gameRules = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").FirstOrDefault()?.GameRules;
+            var gameRules = Utilities
+                .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
+                .FirstOrDefault()?.GameRules;
+
             if (gameRules == null || gameRules.BombPlanted)
                 return HookResult.Continue;
 
@@ -88,102 +105,50 @@ public class BotAI : BasePlugin
         Logger.LogInformation($"Applied {_appliedPatches.Count}/{_patchDefinitions.Count} patches.");
     }
 
-    private bool UpdateBotBombState(CCSPlayerPawn pawn, string playerName)
-    {
-        try
-        {
-            if (pawn?.Bot?.Handle == null || pawn.Bot.Handle == nint.Zero)
-                return false;
-
-            nint botPtr = pawn.Bot.Handle;
-            if (!IsValidMemoryAddress(botPtr))
-                return false;
-
-            nint gameStatePtr = botPtr + BotOffsets.m_gameState;
-            if (!IsValidMemoryAddress(gameStatePtr))
-                return false;
-
-            bool isRoundOver = Marshal.ReadByte(gameStatePtr + BotOffsets.m_isRoundOver) != 0;
-            if (isRoundOver)
-                return true;
-
-            nint bombStateAddr = gameStatePtr + BotOffsets.m_bombState;
-            if (!IsValidMemoryAddress(bombStateAddr))
-                return false;
-
-            if (!MemoryPatch.SetMemAccess(bombStateAddr, sizeof(int)))
-                return false;
-
-            int currentBombState = Marshal.ReadInt32(bombStateAddr);
-            if (currentBombState != 0)
-            {
-                Marshal.WriteInt32(bombStateAddr, 0);
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError($"Failed to update bot bomb state for {playerName}: {ex.Message}");
-            return false;
-        }
-    }
-
-    private static bool IsValidMemoryAddress(nint address)
-    {
-        if (address == nint.Zero)
-            return false;
-
-        try
-        {
-            Marshal.ReadByte(address);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     public override void Unload(bool hotReload)
     {
         Logger.LogInformation("Bot AI Patches unloading...");
 
         foreach (var patch in _appliedPatches)
-        {
             RestorePatch(patch);
-        }
 
         _appliedPatches.Clear();
         Logger.LogInformation("All patches restored.");
     }
 
+
     private bool ApplyPatch(string name)
     {
         try
         {
-            if (!_patchDefinitions.TryGetValue(name, out var patchDef))
+            if (!_patchDefinitions.TryGetValue(name, out var def))
                 return false;
 
             string modulePath = GameUtils.GetModulePath("server");
-            nint address = NativeAPI.FindSignature(modulePath, patchDef.signature);
-            if (address == 0)
+            nint sigAddress = NativeAPI.FindSignature(modulePath, def.signature);
+            if (sigAddress == 0)
+            {
+                Logger.LogError($"Patch '{name}': signature not found in server.dll");
                 return false;
+            }
 
-            var patchBytes = ParseHexString(patchDef.patch);
+            // Apply the optional offset to reach the actual patch target
+            nint address = sigAddress + def.patchOffset;
+
+            var patchBytes = ParseHexString(def.patch);
             if (patchBytes.Count == 0 || !IsValidMemoryAddress(address))
                 return false;
 
+            // Read current bytes for validation and later restoration
             var originalBytes = new List<byte>();
             for (int i = 0; i < patchBytes.Count; i++)
-            {
                 originalBytes.Add(Marshal.ReadByte(address, i));
-            }
 
-            // Validate original bytes match expected pattern
-            if (!ValidateOriginalBytes(name, originalBytes, patchDef.expectedOriginal))
+            if (!ValidateOriginalBytes(name, originalBytes, def.expectedOriginal))
             {
-                Logger.LogError($"Original bytes validation failed for patch '{name}' - refusing to patch");
+                var actual = string.Join(" ", originalBytes.Select(b => $"{b:X2}"));
+                Logger.LogError($"Patch '{name}': byte mismatch at target. Expected: [{def.expectedOriginal}]  Got: [{actual}]");
+                Logger.LogError($"Patch '{name}': server.dll may have been updated again – signature needs refresh");
                 return false;
             }
 
@@ -191,9 +156,7 @@ public class BotAI : BasePlugin
                 return false;
 
             for (int i = 0; i < patchBytes.Count; i++)
-            {
                 Marshal.WriteByte(address, i, patchBytes[i]);
-            }
 
             _appliedPatches.Add(new PatchInfo(name, address, originalBytes));
             Logger.LogInformation($"Patch '{name}' applied at 0x{address:X} ({patchBytes.Count} bytes)");
@@ -210,16 +173,11 @@ public class BotAI : BasePlugin
     {
         try
         {
-            if (!IsValidMemoryAddress(patch.Address))
-                return;
-
-            if (!MemoryPatch.SetMemAccess(patch.Address, patch.OriginalBytes.Count))
-                return;
+            if (!IsValidMemoryAddress(patch.Address)) return;
+            if (!MemoryPatch.SetMemAccess(patch.Address, patch.OriginalBytes.Count)) return;
 
             for (int i = 0; i < patch.OriginalBytes.Count; i++)
-            {
                 Marshal.WriteByte(patch.Address, i, patch.OriginalBytes[i]);
-            }
         }
         catch (Exception ex)
         {
@@ -227,26 +185,25 @@ public class BotAI : BasePlugin
         }
     }
 
+
     private bool ValidateOriginalBytes(string patchName, List<byte> actualBytes, string expectedHex)
     {
         try
         {
-            var expectedTokens = expectedHex.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (actualBytes.Count != expectedTokens.Length)
+            var tokens = expectedHex.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (actualBytes.Count != tokens.Length)
             {
-                Logger.LogWarning($"Patch '{patchName}': byte count mismatch - expected {expectedTokens.Length}, got {actualBytes.Count}");
+                Logger.LogWarning($"Patch '{patchName}': byte count mismatch – expected {tokens.Length}, got {actualBytes.Count}");
                 return false;
             }
 
-            for (int i = 0; i < expectedTokens.Length; i++)
+            for (int i = 0; i < tokens.Length; i++)
             {
-                if (expectedTokens[i] == "?")
-                    continue; // wildcard → skip check
-
-                byte expectedByte = Convert.ToByte(expectedTokens[i], 16);
-                if (actualBytes[i] != expectedByte)
+                if (tokens[i] == "?") continue;
+                byte expected = Convert.ToByte(tokens[i], 16);
+                if (actualBytes[i] != expected)
                 {
-                    Logger.LogWarning($"Patch '{patchName}': byte mismatch at offset {i} - expected {expectedByte:X2}, got {actualBytes[i]:X2}");
+                    Logger.LogWarning($"Patch '{patchName}': byte[{i}] mismatch – expected 0x{expected:X2}, got 0x{actualBytes[i]:X2}");
                     return false;
                 }
             }
@@ -256,13 +213,54 @@ public class BotAI : BasePlugin
         }
         catch (Exception ex)
         {
-            Logger.LogError($"Patch '{patchName}': validation error - {ex.Message}");
+            Logger.LogError($"Patch '{patchName}': validation error – {ex.Message}");
             return false;
         }
     }
 
-    private static List<byte> ParseHexString(string hexString)
+    private static bool IsValidMemoryAddress(nint address)
     {
-        return [.. hexString.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(hex => Convert.ToByte(hex, 16))];
+        if (address == nint.Zero) return false;
+        try { Marshal.ReadByte(address); return true; }
+        catch { return false; }
+    }
+
+    private static List<byte> ParseHexString(string hexString) =>
+        [.. hexString.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                     .Where(t => t != "?")
+                     .Select(t => Convert.ToByte(t, 16))];
+
+
+    private bool UpdateBotBombState(CCSPlayerPawn pawn, string playerName)
+    {
+        try
+        {
+            if (pawn?.Bot?.Handle == null || pawn.Bot.Handle == nint.Zero)
+                return false;
+
+            nint botPtr = pawn.Bot.Handle;
+            if (!IsValidMemoryAddress(botPtr)) return false;
+
+            nint gameStatePtr = botPtr + BotOffsets.m_gameState;
+            if (!IsValidMemoryAddress(gameStatePtr)) return false;
+
+            bool isRoundOver = Marshal.ReadByte(gameStatePtr + BotOffsets.m_isRoundOver) != 0;
+            if (isRoundOver) return true;
+
+            nint bombStateAddr = gameStatePtr + BotOffsets.m_bombState;
+            if (!IsValidMemoryAddress(bombStateAddr)) return false;
+
+            if (!MemoryPatch.SetMemAccess(bombStateAddr, sizeof(int))) return false;
+
+            if (Marshal.ReadInt32(bombStateAddr) != 0)
+                Marshal.WriteInt32(bombStateAddr, 0);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to update bot bomb state for {playerName}: {ex.Message}");
+            return false;
+        }
     }
 }
