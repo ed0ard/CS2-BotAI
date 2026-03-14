@@ -2,7 +2,7 @@
 Improves the built in bots AI.<br>
 <br>
 Keeps them from running with a knife or nade.<br>
-Keeps them from switching to their knives when in flame.<br>
+Keeps them from switching to their knives when in flames.<br>
 Keeps them from switching to their knives when escaping from bomb.<br>
 Keeps them from rushing to enemy spawn as their first goal.<br>
 Keeps them from stopping after the bomb is planted.<br>
