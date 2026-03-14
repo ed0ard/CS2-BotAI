@@ -9,3 +9,9 @@ Keeps them from stopping after a bomb is planted.<br>
 V 1.4<br>
 Built and testing with<br>
 cs# 1.0.363<br>
+# Installation
+1. Download the latest BotAI.zip from Releases
+
+2. Extract the folder and upload it to `game/csgo/addons/counterstrikesharp/plugins` on your server
+
+3. Restart your server
