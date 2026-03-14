@@ -22,7 +22,7 @@ public class BotAI : BasePlugin
 {
     public override string ModuleName        => "Patches - Bot AI";
     public override string ModuleVersion     => "1.4";
-    public override string ModuleAuthor      => "K4ryuu(updated by ed0ard)";
+    public override string ModuleAuthor      => "K4ryuu(modified by ed0ard)";
     public override string ModuleDescription => "Prevents bots from visiting enemy spawn at round start";
 
     private readonly List<PatchInfo> _appliedPatches = [];
@@ -30,8 +30,7 @@ public class BotAI : BasePlugin
     private readonly Dictionary<string, (string signature, string patch, string expectedOriginal, int patchOffset)> _patchDefinitions = new()
     {
         ["HasVisitedEnemySpawn"] = (
-            // mov BYTE PTR [rdi+0x520], sil
-            // was 0x505, now 0x520 after update
+            // mov BYTE PTR [rdi+0x520], sil  (offset changed from 0x505 to 0x520)
             signature:        "40 88 B7 20 05 00 00",
             patch:            "C6 87 20 05 00 00 01",
             expectedOriginal: "40 88 B7 20 05 00 00",
@@ -39,12 +38,9 @@ public class BotAI : BasePlugin
         ),
 
         ["GameState_Reset"] = (
-            // 83 7F 0C 00  →  cmp dword ptr [rdi+C], 0
-            // 74 07        →  je  +7  (skip the write)
-            // C7 47 0C 00 00 00 00  ←  patch target (NOP this)
-            // sig is 13 bytes; target starts at offset +6
+            // cmp [rdi+C], 0 / je +7 / mov [rdi+C], 0  — patch the write at offset +6
             signature:        "83 7F 0C 00 74 07 C7 47 0C 00 00 00 00",
-            patch:            "0F 1F 80 00 00 00 00",   // 7-byte NOP
+            patch:            "0F 1F 80 00 00 00 00",
             expectedOriginal: "C7 47 0C 00 00 00 00",
             patchOffset:      6
         ),
@@ -57,15 +53,10 @@ public class BotAI : BasePlugin
         ),
 
         ["EscapeFromFlames_OnEnter_NoEquipKnife"] = (
-            // 0F 28 F9              →  movaps xmm7, xmm1   (callee-save)
-            // 8B 52 38              →  mov    edx, [rdx+38]
-            // E8 ?? ?? ?? ??        ←  call   EquipKnife  (patch target)
-            // 8B 54 24 68 48 8B CB  →  continuation (unique fingerprint)
-            // sig_start + 6 = E8 byte
-            signature:        "0F 28 F9 8B 52 38 E8 ? ? ? ? 8B 54 24 68 48 8B CB",
-            patch:            "90 90 90 90 90",          // NOP the 5-byte call
+            signature:        "E8 ? ? ? ? F3 0F 10 46 ? 0F 2E C7 48 89 7E ? 7A ? 74 ? BA ? ? ? ? 48 8D 4E ? 41 B8 ? ? ? ? E8 ? ? ? ? F3 0F 11 7E ? F3 0F 10 46 ? 0F 2E C6 7A ? 74 ? BA ? ? ? ? 48 8D 4E ? 41 B8 ? ? ? ? E8 ? ? ? ? C7 46 ? ? ? ? ? 48 8B 5C 24 ? 48 8B 74 24 ? 0F 28 74 24 ? 0F 28 7C 24 ? 44 0F 28 44 24 ? 48 83 C4 ? 5F C3 CC CC CC CC CC CC CC CC 40 53",
+            patch:            "90 90 90 90 90",
             expectedOriginal: "E8 ? ? ? ?",
-            patchOffset:      6
+            patchOffset:      0
         ),
     };
 
@@ -91,10 +82,7 @@ public class BotAI : BasePlugin
             if (pawn?.IsValid != true || player.Team <= CsTeam.Spectator || !pawn.BotAllowActive)
                 return HookResult.Continue;
 
-            var gameRules = Utilities
-                .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
-                .FirstOrDefault()?.GameRules;
-
+            var gameRules = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").FirstOrDefault()?.GameRules;
             if (gameRules == null || gameRules.BombPlanted)
                 return HookResult.Continue;
 
@@ -116,7 +104,6 @@ public class BotAI : BasePlugin
         Logger.LogInformation("All patches restored.");
     }
 
-
     private bool ApplyPatch(string name)
     {
         try
@@ -132,14 +119,12 @@ public class BotAI : BasePlugin
                 return false;
             }
 
-            // Apply the optional offset to reach the actual patch target
             nint address = sigAddress + def.patchOffset;
 
             var patchBytes = ParseHexString(def.patch);
             if (patchBytes.Count == 0 || !IsValidMemoryAddress(address))
                 return false;
 
-            // Read current bytes for validation and later restoration
             var originalBytes = new List<byte>();
             for (int i = 0; i < patchBytes.Count; i++)
                 originalBytes.Add(Marshal.ReadByte(address, i));
@@ -148,7 +133,6 @@ public class BotAI : BasePlugin
             {
                 var actual = string.Join(" ", originalBytes.Select(b => $"{b:X2}"));
                 Logger.LogError($"Patch '{name}': byte mismatch at target. Expected: [{def.expectedOriginal}]  Got: [{actual}]");
-                Logger.LogError($"Patch '{name}': server.dll may have been updated again – signature needs refresh");
                 return false;
             }
 
@@ -184,7 +168,6 @@ public class BotAI : BasePlugin
             Logger.LogError($"Failed to restore patch '{patch.Name}': {ex.Message}");
         }
     }
-
 
     private bool ValidateOriginalBytes(string patchName, List<byte> actualBytes, string expectedHex)
     {
@@ -229,7 +212,6 @@ public class BotAI : BasePlugin
         [.. hexString.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                      .Where(t => t != "?")
                      .Select(t => Convert.ToByte(t, 16))];
-
 
     private bool UpdateBotBombState(CCSPlayerPawn pawn, string playerName)
     {
