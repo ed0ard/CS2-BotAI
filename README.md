@@ -6,8 +6,9 @@ Keeps them from switching to their knives when in flames.<br>
 Keeps them from switching to their knives when escaping from bomb.<br>
 Keeps them from rushing to enemy spawn as their first goal.<br>
 Keeps them from stopping after the bomb is planted.<br>
+Removed the restriction that only the first five in weapon preference were valid.<br>
 <br>
-V 1.4.1<br>
+V 1.4.2<br>
 Built and testing with<br>
 cs# 1.0.363<br>
 # Installation
