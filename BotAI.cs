@@ -26,7 +26,7 @@ public class BotAI : BasePlugin
     public override string ModuleVersion     => "1.5.3";
     public override string ModuleAuthor      => "Austin (updated by ed0ard)";
     public override string ModuleDescription =>
-        "Bot AI patches: spawn, safe-check, knife suppression, unrestricted weapon buying";
+        "Improve and fix bots' behavior comprehensively";
 
     private readonly List<PatchInfo> _appliedPatches = [];
 
