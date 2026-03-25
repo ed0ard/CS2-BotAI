@@ -8,8 +8,9 @@ Keeps them from rushing to enemy spawn as their first goal.<br>
 Keeps them from stopping after the bomb is planted.<br>
 Removed the restriction that only the first five in weapon preference were valid.<br>
 Removed the restriction that prevented bots from buying in pistol rounds and overtime.<br>
+Allow them to flick with sniper rifles and spray at all ranges.<br>
 <br>
-V 1.5.1<br>
+V 1.5.4<br>
 Built and testing with<br>
 cs# 1.0.363<br>
 # Installation
