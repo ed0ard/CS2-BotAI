@@ -23,7 +23,7 @@ public static class BotOffsets
 public class BotAI : BasePlugin
 {
     public override string ModuleName        => "Patches - Bot AI";
-    public override string ModuleVersion     => "1.6.1";
+    public override string ModuleVersion     => "1.6.2";
     public override string ModuleAuthor      => "Austin (updated by ed0ard)";
     public override string ModuleDescription =>
         "Improve and fix bots' behavior comprehensively";
