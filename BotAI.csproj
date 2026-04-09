@@ -10,14 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.363" />
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.364" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="Common">
-      <HintPath>..\..\..\..\Tmp\ArchiveV02\Common\bin\Debug\net8.0\Common.dll</HintPath>
+      <HintPath>C:\Games\BETTERBOTS\FINAL\CS2-BotAI\Common.dll</HintPath>
     </Reference>
-
   </ItemGroup>
 
 
