@@ -11,9 +11,9 @@ Removed the restriction that prevented bots from buying in pistol rounds and ove
 Allow them to flick with sniper rifles and spray at all ranges.<br>
 Improved their movement comprehensively, especially in dodging and peeking.<br>
 <br>
-V 1.6.2<br>
+V 1.6.3<br>
 Built and testing with<br>
-cs# 1.0.363<br>
+cs# 1.0.364<br>
 # Installation
 1. Download the latest BotAI.zip from [Releases](https://github.com/ed0ard/CS2-BotAI/releases)
 
