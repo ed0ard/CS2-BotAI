@@ -6,8 +6,6 @@ Keeps them from switching to their knives when in flames.<br>
 Keeps them from switching to their knives when escaping from bomb.<br>
 Keeps them from rushing to enemy spawn as their first goal.<br>
 Keeps them from stopping after the bomb is planted.<br>
-Removed the restriction that only the first five in weapon preference were valid.<br>
-Removed the restriction that prevented bots from buying in pistol rounds and overtime.<br>
 Allows them to flick with sniper rifles and spray at all ranges.<br>
 Improves their movement comprehensively, especially in dodging and peeking.<br>
 Enhances bots' awareness of their surroundings.<br>
