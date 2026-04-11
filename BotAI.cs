@@ -172,7 +172,7 @@ public class BotAI : BasePlugin
             patchOffset:      11
         ),
 
-        // test
+
         ["AttackState_DodgeDuringReload"] = (
             signature:        "E9 ? ? ? ? 0F 2F BB A4 00 00 00 76 74",
             patch:            "EB 74",
@@ -229,7 +229,7 @@ public class BotAI : BasePlugin
             patchOffset:      2    // RVA 0x2f23a8：DODGE_A IsSniper jne+6A → NOP
         ),
 
-        // Test
+
         ["Vision_AlwaysWatchApproachPoints"] = (
             signature:        "80 BF B1 6C 00 00 00 75 25 0F 2F",
             patch:            "EB 25",
