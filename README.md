@@ -11,7 +11,7 @@ Improves their movement comprehensively, especially in dodging and peeking.<br>
 Enhances bots' awareness of their surroundings.<br>
 Allows defusing to be interrupted.<br>
 <br>
-V 1.6.5<br>
+V 1.6.6<br>
 Built and testing with<br>
 cs# 1.0.364<br>
 # Installation
