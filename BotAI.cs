@@ -14,9 +14,12 @@ public record PatchInfo(string Name, nint Address, List<byte> OriginalBytes);
 
 public static class BotOffsets
 {
-    // Differs by platform: Windows = 0x5128, Linux  = 0x5100.
+    // The embedded private CSGameState object moved with the recent bot layout update:
+    // Windows = 0x5120, Linux = 0x5100.  The nearby Windows +0x5128 field is a
+    // byte state flag (the current binary writes it with C6 87 ... 28 51 ...),
+    // so it must not be treated as a pointer.
     public static readonly int m_gameState =
-        RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 0x5100 : 0x5128;
+        RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 0x5100 : 0x5120;
     // Offsets inside CSGameState
     public const int m_isRoundOver = 0x08;
     public const int m_bombState = 0x0C;
@@ -24,7 +27,7 @@ public static class BotOffsets
 
 }
 
-[MinimumApiVersion(304)]
+[MinimumApiVersion(376)]
 public class BotAI : BasePlugin
 {
     public override string ModuleName => "Patches - Bot AI";
@@ -55,9 +58,39 @@ public class BotAI : BasePlugin
         // the CC padding the cave patch itself overwrites, so it cannot be re-resolved
         // once written, and the displacement math below needs both pair addresses.
         var sites = new Dictionary<string, nint>();
+        string modulePath = GameUtils.GetModulePath("server");
+        byte[]? moduleImage = null;
+        bool moduleImageLoadAttempted = false;
         foreach (var (name, def) in patchDefinitions)
         {
-            nint sigAddr = NativeAPI.FindSignature(GameUtils.GetModulePath("server"), def.signature);
+            if (!moduleImageLoadAttempted)
+            {
+                moduleImageLoadAttempted = true;
+                try { moduleImage = File.ReadAllBytes(modulePath); }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning($"Could not read '{modulePath}' for signature uniqueness checks: {ex.Message}");
+                }
+            }
+
+            if (moduleImage != null && TryScanSignature(moduleImage, def.signature, out var matches))
+            {
+                if (matches.Count > 1)
+                {
+                    string locations = string.Join(", ", matches.Take(8).Select(offset => $"0x{offset:X}"));
+                    if (matches.Count > 8) locations += ", ...";
+                    Logger.LogError($"'{name}': signature matched {matches.Count} file locations [{locations}]; skipping ambiguous patch.");
+                    continue;
+                }
+                if (matches.Count == 0)
+                    Logger.LogWarning($"'{name}': signature was not found in the module file; verifying through the runtime resolver.");
+            }
+            else if (moduleImage == null)
+            {
+                Logger.LogWarning($"'{name}': could not scan '{modulePath}' on disk; using the runtime signature resolver without uniqueness validation.");
+            }
+
+            nint sigAddr = NativeAPI.FindSignature(modulePath, def.signature);
             if (sigAddr == 0) { Logger.LogError($"'{name}': signature not found."); continue; }
             sites[name] = sigAddr + def.patchOffset;
         }
@@ -220,6 +253,94 @@ public class BotAI : BasePlugin
         [.. hex.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                .Where(t => t != "?")
                .Select(t => Convert.ToByte(t, 16))];
+
+    // NativeAPI.FindSignature returns the first match only. Count matches in the
+    // module file before resolving the runtime address so a drifted signature can
+    // never silently patch an arbitrary duplicate. File scanning is only a
+    // uniqueness guard; NativeAPI still supplies the relocated process address.
+    private static bool TryScanSignature(byte[] image, string signature, out List<int> matches)
+    {
+        matches = [];
+        try
+        {
+            string[] tokens = signature.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var pattern = new byte?[tokens.Length];
+            int anchorStart = -1;
+            int anchorLength = 0;
+            int runStart = -1;
+
+            for (int i = 0; i < tokens.Length; i++)
+            {
+                if (tokens[i] == "?")
+                {
+                    if (runStart >= 0)
+                    {
+                        int runLength = i - runStart;
+                        if (runLength > anchorLength)
+                        {
+                            anchorStart = runStart;
+                            anchorLength = runLength;
+                        }
+                        runStart = -1;
+                    }
+                    continue;
+                }
+
+                pattern[i] = Convert.ToByte(tokens[i], 16);
+                runStart = runStart < 0 ? i : runStart;
+            }
+
+            if (runStart >= 0)
+            {
+                int runLength = tokens.Length - runStart;
+                if (runLength > anchorLength)
+                {
+                    anchorStart = runStart;
+                    anchorLength = runLength;
+                }
+            }
+
+            if (anchorLength == 0) return true;
+
+            byte[] anchor = new byte[anchorLength];
+            for (int i = 0; i < anchorLength; i++)
+                anchor[i] = pattern[anchorStart + i]!.Value;
+
+            int searchOffset = 0;
+            while (searchOffset <= image.Length - anchorLength)
+            {
+                int relative = image.AsSpan(searchOffset).IndexOf(anchor);
+                if (relative < 0) break;
+
+                int anchorOffset = searchOffset + relative;
+                int candidate = anchorOffset - anchorStart;
+                searchOffset = anchorOffset + 1;
+
+                if (candidate < 0 || candidate + pattern.Length > image.Length)
+                    continue;
+
+                bool found = true;
+                for (int i = 0; i < pattern.Length; i++)
+                {
+                    if (pattern[i].HasValue && image[candidate + i] != pattern[i]!.Value)
+                    {
+                        found = false;
+                        break;
+                    }
+                }
+
+                if (found && (matches.Count == 0 || matches[^1] != candidate))
+                    matches.Add(candidate);
+            }
+
+            return true;
+        }
+        catch
+        {
+            matches.Clear();
+            return false;
+        }
+    }
 
     private bool UpdateBotBombState(CCSPlayerPawn pawn, string playerName)
     {

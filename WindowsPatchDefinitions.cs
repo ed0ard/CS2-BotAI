@@ -114,10 +114,14 @@ internal static class WindowsPatchDefinitions
         ),
 
         ["AttackState_SkipSniperSpreadCheck"] = (
-            signature: "41 0F 28 C8 0F 57 C0 FF 15 ? ? ? ? F3 0F 10 0D ? ? ? ? 0F 2F C8 0F 86 ? ? ? ? 48 8B 9E ? ? 00 00",
+            // Current Windows server.dll (2026-09-27): the spread gate now
+            // preserves xmm2 before the indirect cosine call and loads the
+            // weapon spread from [rbx+0x10]. Keep the call displacement and
+            // branch displacement wildcarded; both are relocation-dependent.
+            signature: "41 0F 28 C8 41 0F 28 C2 FF 15 ? ? ? ? F3 0F 10 4B 10 0F 2F C8 0F 86 ? ? ? ? 8B 96 ? ? 00 00",
             patch: "90 90 90 90 90 90",
             expectedOriginal: "0F 86 ? ? ? ?",
-            patchOffset: 24  // RVA 0x320153: NOP jbe+47B
+            patchOffset: 22  // Current RVA 0x2E2E0C: NOP jbe+0x26A
         ),
 
 
@@ -233,9 +237,11 @@ internal static class WindowsPatchDefinitions
             patchOffset: 2
         ),
 
-        // IsNoticable（raw 0x2DA930）
+        // IsNoticable (current Windows server.dll raw 0x2958B0).
+        // The helper is unchanged at its entry, but the null-result branch
+        // changed from 75 to 74 after the recent update.
         ["IsNoticable_AlwaysTrue"] = (
-        signature: "40 53 48 83 EC 30 48 8B D9 BA FF FF FF FF 48 8D 0D ? ? ? ? E8 ? ? ? ? 48 85 C0 75",
+        signature: "40 53 48 83 EC 30 48 8B D9 BA FF FF FF FF 48 8D 0D ? ? ? ? E8 ? ? ? ? 48 85 C0 74",
         patch: "B0 01 C3",
         expectedOriginal: "40 53 48",
         patchOffset: 0
@@ -306,8 +312,11 @@ internal static class WindowsPatchDefinitions
         //  directly to the planted site instead of random searching.
         ["TBot_BombsiteSearch_UseKnownPlantedSite"] = (
             signature: "48 8B 8E ? ? 00 00 E8 ? ? ? ? ? 8B ? E8 ? ? ? ? 4C 8B 05 ? ? ? ? 85 C0",
-            patch: "E8 28 41 F9 FF",
-            expectedOriginal: "E8 38 3B F9 FF",
+            // Current call site RVA 0x3301BB: retarget GetNextBombsiteToSearch()
+            // (RVA 0x2C5300) to CSGameState::GetPlantedBombsite() (RVA 0x2C58F0).
+            // rel32 = 0x2C58F0 - (0x3301BB + 5) = -0x6A8D0.
+            patch: "E8 30 57 F9 FF",
+            expectedOriginal: "E8 40 51 F9 FF",
             patchOffset: 15
         ),
 
