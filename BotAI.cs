@@ -14,9 +14,10 @@ public record PatchInfo(string Name, nint Address, List<byte> OriginalBytes);
 
 public static class BotOffsets
 {
-    // Differs by platform: Windows = 0x5128, Linux  = 0x5100.
+    // Differs by platform: Windows = 0x5128, Linux = 0x50F8 (0x5100 before CS2 1.41.8.5, when CCSBot shrank by
+    // 8 bytes above 0x4F4C).
     public static readonly int m_gameState =
-        RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 0x5100 : 0x5128;
+        RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 0x50F8 : 0x5128;
     // Offsets inside CSGameState
     public const int m_isRoundOver = 0x08;
     public const int m_bombState = 0x0C;
