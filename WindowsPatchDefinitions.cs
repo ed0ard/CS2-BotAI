@@ -14,14 +14,6 @@ internal static class WindowsPatchDefinitions
         patchOffset: 0
         ),
 
-        // NOP the BombState reset to avoid bot confusion
-        ["GameState_Reset"] = (
-        signature: "83 7F 0C 00 74 07 C7 47 0C 00 00 00 00",
-        patch: "0F 1F 80 00 00 00 00",
-        expectedOriginal: "C7 47 0C 00 00 00 00",
-        patchOffset: 6
-        ),
-
         // IsSafe() always false in IdleState → bots don't idle near safe areas
         ["Idle_IsSafeAlwaysFalse"] = (
         signature: "74 28 33 D2 48 8B CE E8 ? ? ? ? 84 C0 75 1A",
