@@ -241,33 +241,6 @@ internal static class WindowsPatchDefinitions
         patchOffset: 0
         ),
 
-        // InViewCone(bot, target):
-        //      angle = GetFOVToPosition(target) 
-        //      if angle > 60.0f:
-        //          return 0 
-        //      eax = 0
-        //      angle2 = GetFOVToPosition(target)
-        //      eax = (angle2 <= 25.0f) ? 1 : 0
-        //      eax += 1
-        //      return eax   
-        // NOP the outer-FOV jbe so the function falls
-        // through to `xor eax,eax; ret` (returns 0).
-        // the companion InViewCone_RemoveInnerFOV branch is then never reached (as in stable).
-        ["InViewCone_RemoveOuterFOV"] = (
-            signature: "FF 90 ? ? 00 00 0F 2F 05 ? ? ? ? 76 08 33 C0 48 83 C4 20 5B C3 48 8B 03 48 8B CB FF 90 ? ? 00 00",
-            patch: "90 90",
-            expectedOriginal: "76 08",
-            patchOffset: 13
-        ),
-
-        ["InViewCone_RemoveInnerFOV"] = (
-        signature: "0F 96 C0 FF C0 48 83 C4 20 5B C3",
-        patch: "B0 01 90",
-        expectedOriginal: "0F 96 C0",
-        patchOffset: 0
-        ),
-
-
         // CCSBot::Upkeep adds two bot-specific trig results to its persistent
         // look offsets every tick. Replace only those two calls with 0.0f;
         // global trigonometry helpers and the rest of native aiming stay intact.
