@@ -233,14 +233,6 @@ internal static class WindowsPatchDefinitions
             patchOffset: 2
         ),
 
-        // IsNoticable（raw 0x2DA930）
-        ["IsNoticable_AlwaysTrue"] = (
-        signature: "40 53 48 83 EC 30 48 8B D9 BA FF FF FF FF 48 8D 0D ? ? ? ? E8 ? ? ? ? 48 85 C0 75",
-        patch: "B0 01 C3",
-        expectedOriginal: "40 53 48",
-        patchOffset: 0
-        ),
-
         // CCSBot::Upkeep adds two bot-specific trig results to its persistent
         // look offsets every tick. Replace only those two calls with 0.0f;
         // global trigonometry helpers and the rest of native aiming stay intact.
