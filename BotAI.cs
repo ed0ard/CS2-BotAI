@@ -28,7 +28,7 @@ public static class BotOffsets
 public class BotAI : BasePlugin
 {
     public override string ModuleName => "Patches - Bot AI";
-    public override string ModuleVersion => "1.8.9";
+    public override string ModuleVersion => "1.8.10";
     public override string ModuleAuthor => "K4ryuu & Austin (updated by ed0ard & Misaka17032 & XBribo & AmagiReina)";
     public override string ModuleDescription =>
         "Improve and fix bots' behavior comprehensively";

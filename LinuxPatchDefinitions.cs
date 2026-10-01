@@ -128,10 +128,10 @@ internal static class LinuxPatchDefinitions
 
         // AttackState::OnUpdate: don't leave the nearby-fire threat path because spread is zero.
         ["AttackState_SkipSniperSpreadCheck"] = (
-            signature:        "F3 0F 10 8B E0 52 00 00 66 0F EF C0 0F 2F C8 0F 86 ? ? ? ?",
+            signature:        "83 BB C8 05 00 00 14 48 89 DF 0F 84 ? ? ? ? E8 ? ? ? ? F3 0F 10 8B D8 52 00 00 66 0F EF C0 0F 2F C8 0F 86 ? ? ? ? F3 0F 10 0D",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 86 ? ? ? ?",
-            patchOffset:      15
+            patchOffset:      36
         ),
 
         // Keep bot movement behavior when seeing enemies.
