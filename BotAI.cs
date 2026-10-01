@@ -28,7 +28,7 @@ public static class BotOffsets
 public class BotAI : BasePlugin
 {
     public override string ModuleName => "Patches - Bot AI";
-    public override string ModuleVersion => "1.8.9";
+    public override string ModuleVersion => "1.8.10";
     public override string ModuleAuthor => "K4ryuu & Austin (updated by ed0ard & Misaka17032 & XBribo & AmagiReina)";
     public override string ModuleDescription =>
         "Improve and fix bots' behavior comprehensively";
@@ -55,16 +55,8 @@ public class BotAI : BasePlugin
         // the CC padding the cave patch itself overwrites, so it cannot be re-resolved
         // once written, and the displacement math below needs both pair addresses.
         var sites = new Dictionary<string, nint>();
-        var skippedPatches = new HashSet<string>();
         foreach (var (name, def) in patchDefinitions)
         {
-            if (!_isLinux && name == "AttackState_SkipSniperSpreadCheck")
-            {
-                Logger.LogWarning($"{name}: disabled; no verified AttackState target exists in the current Windows build.");
-                skippedPatches.Add(name);
-                continue;
-            }
-
             nint sigAddr = NativeAPI.FindSignature(GameUtils.GetModulePath("server"), def.signature);
             if (sigAddr == 0) { Logger.LogError($"'{name}': signature not found."); continue; }
             sites[name] = sigAddr + def.patchOffset;
@@ -96,8 +88,6 @@ public class BotAI : BasePlugin
 
         foreach (var name in patchDefinitions.Keys)
         {
-            if (skippedPatches.Contains(name)) continue;
-
             if (caveNames.Contains(name)) continue;
 
             string caveName = $"{name}_Cave";
