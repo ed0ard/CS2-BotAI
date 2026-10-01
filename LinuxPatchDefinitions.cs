@@ -7,11 +7,12 @@ internal static class LinuxPatchDefinitions
         {
         // Verified against libserver.so SHA256:
         // d81faffb3e3a5f2001932b3b55a96c4ac05c2ed4b99702b06fc416b6e9bb5300.
+        // Keep instruction/field context fixed; wildcard RIP-relative addresses and branch targets.
         // Misidentified entity, zoom, retreat and vision patches are intentionally omitted.
 
         // NOP the BombState reset in CSGameState::Reset() (linux-specific bytes).
         ["GameState_Reset"] = (
-            signature:        "0F 2E 43 18 C7 43 0C 00 00 00 00",
+            signature:        "0F 2E 43 18 C7 43 0C 00 00 00 00 0F 8A ? ? ? ? 0F 85 ? ? ? ? 48 8B 05 ? ? ? ? C6 43 6C 00 C7 43 68 FF FF FF FF",
             patch:            "0F 1F 80 00 00 00 00",
             expectedOriginal: "C7 43 0C 00 00 00 00",
             patchOffset:      4
@@ -19,7 +20,7 @@ internal static class LinuxPatchDefinitions
 
         // IdleState::OnUpdate: skip the safe-time grenade/knife selection branch.
         ["Idle_IsSafeAlwaysFalse"] = (
-            signature:        "E8 ? ? ? ? 84 C0 0F 85 ? ? ? ? 4C 8D B3 ? ? 00 00 4C 89 F7 E8",
+            signature:        "E8 ? ? ? ? 84 C0 0F 85 ? ? ? ? 4C 8D B3 F8 50 00 00 4C 89 F7 E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 80 BB 88 52 00 00 00",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 85 ? ? ? ?",
             patchOffset:      7
@@ -27,10 +28,10 @@ internal static class LinuxPatchDefinitions
 
         // EscapeFromBombState::OnEnter tail-call to EquipKnife() -> ret.
         ["EscapeFromBomb_OnEnter_NoEquipKnife"] = (
-            signature:        "C6 83 ? ? 00 00 00 48 8B 5D F8 C9 E9 ? ? ? ?",
+            signature:        "C6 83 4C 4F 00 00 00 48 89 DF C6 83 74 4F 00 00 00 48 8B 5D F8 C9 E9 ? ? ? ?",
             patch:            "C3 90 90 90 90",
             expectedOriginal: "E9 ? ? ? ?",
-            patchOffset:      12
+            patchOffset:      22
         ),
 
         // EscapeFromBombState::OnUpdate call to EquipKnife() -> NOP.
@@ -43,7 +44,7 @@ internal static class LinuxPatchDefinitions
 
         // EscapeFromFlamesState::OnEnter call to EquipKnife() -> NOP.
         ["EscapeFromFlames_OnEnter_NoEquipKnife"] = (
-            signature:        "C6 83 ? ? 00 00 00 48 89 DF C6 83 ? ? 00 00 00 E8 ? ? ? ? F3 0F 10 1D",
+            signature:        "C6 83 4C 4F 00 00 00 48 89 DF C6 83 74 4F 00 00 00 E8 ? ? ? ? F3 0F 10 1D ? ? ? ? 49 C7 44 24 20 00 00 00 00 41 0F 2E 5C 24 14",
             patch:            "90 90 90 90 90",
             expectedOriginal: "E8 ? ? ? ?",
             patchOffset:      17
@@ -97,7 +98,7 @@ internal static class LinuxPatchDefinitions
 
         // Keep bot movement behavior when seeing enemies.
         ["AllSkill_KeepMoving_WhenSeeSniper"] = (
-            signature:        "0F 2F 05 ? ? ? ? 76 0D 80 BB C4 05 00 00 00 0F 85",
+            signature:        "0F 2F 05 ? ? ? ? 76 0D 80 BB C4 05 00 00 00 0F 85 ? ? ? ? 0F B6 05 ? ? ? ? 84 C0 0F 84 ? ? ? ?",
             patch:            "90 90",
             expectedOriginal: "76 0D",
             patchOffset:      7
@@ -105,23 +106,23 @@ internal static class LinuxPatchDefinitions
 
         // AttackState::OnEnter: force the reload-dodge chance flag true.
         ["AttackState_DodgeDuringReload"] = (
-            signature:        "F3 0F 59 40 08 0F 2F C8 41 0F 97 44 24 44 48 81 C4 A8 01 00 00",
+            signature:        "E8 ? ? ? ? 48 8B 43 08 0F 28 C8 66 41 0F 6E C5 F3 0F 59 40 08 0F 2F C8 41 0F 97 44 24 44 48 81 C4 A8 01 00 00",
             patch:            "41 C6 44 24 44 01",
             expectedOriginal: "41 0F 97 44 24 44",
-            patchOffset:      8
+            patchOffset:      25
         ),
 
         // AttackState::OnEnter: force the crouch-dodge chance flag true.
         ["SniperCrouchDodge_jb"] = (
-            signature:        "0F 2F F8 66 0F EF C0 41 0F 93 44 24 42 E8 ? ? ? ? 48 8B 43 08",
+            signature:        "66 41 0F 6E FE F3 0F 10 0D ? ? ? ? 0F 2F F8 66 0F EF C0 41 0F 93 44 24 42 E8 ? ? ? ? 48 8B 43 08 0F 28 C8",
             patch:            "41 C6 44 24 42 01",
             expectedOriginal: "41 0F 93 44 24 42",
-            patchOffset:      7
+            patchOffset:      20
         ),
 
         // AttackState::OnEnter: don't require the current weapon to be a sniper for dodge A.
         ["SniperDodge_SkipIsSniper_DodgeA"] = (
-            signature:        "48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 44 8B 35 ? ? ? ? F3 0F 10 0D",
+            signature:        "48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 44 8B 35 ? ? ? ? F3 0F 10 0D ? ? ? ? 66 0F EF C0 E8 ? ? ? ? 66 41 0F 6E D6 0F 2F D0 77 ?",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 84 ? ? ? ?",
             patchOffset:      10
@@ -138,7 +139,7 @@ internal static class LinuxPatchDefinitions
 
         // CCSBot::OnAudibleEvent: accept sounds regardless of distance.
         ["OnAudibleEvent_GlobalHearRange"] = (
-            signature:        "F3 0F 51 ? 0F 2F ? 0F 86 ? ? ? ? 4C 89 EF",
+            signature:        "F3 0F 51 D2 0F 2F F2 0F 86 ? ? ? ? 4C 89 EF F3 0F 11 8D 28 FF FF FF F3 0F 11 95 2C FF FF FF",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 86 ? ? ? ?",
             patchOffset:      7
@@ -153,7 +154,7 @@ internal static class LinuxPatchDefinitions
         // call target. A future drift-proof version would resolve GetPlantedBombsite
         // via its own signature and compute the displacement like the cave pairs.
         ["TBot_BombsiteSearch_UseKnownPlantedSite"] = (
-            signature:        "48 8B BB ? ? 00 00 E8 ? ? ? ? 4C 89 F7 E8 ? ? ? ? 49 8B 3C 24 31 F6",
+            signature:        "48 8B BB 00 5E 00 00 E8 ? ? ? ? 4C 89 F7 E8 AC B4 F6 FF 49 8B 3C 24 31 F6 85 C0 78 ? 3B 87 A0 21 00 00 7D ?",
             patch:            "E8 BC B1 F6 FF",   // call GetPlantedBombsite
             expectedOriginal: "E8 AC B4 F6 FF",   // call GetNextBombsiteToSearch
             patchOffset:      15
@@ -181,7 +182,7 @@ internal static class LinuxPatchDefinitions
         // is 5 — same target, instruction shrinks by one). expectedOriginal wildcards the
         // displacement so validation survives game updates.
         ["OnBombPlanted_AllBotsLearnSite"] = (
-            signature:        "48 8B 83 ? ? 00 00 48 8B 40 18 80 B8 ? ? 00 00 02 0F 84 ? ? ? ? 48 8B 7B 18",
+            signature:        "48 8B 83 F8 50 00 00 48 8B 40 18 80 B8 24 06 00 00 02 0F 84 ? ? ? ? 48 8B 7B 18 48 8D 15 ? ? ? ? 48 8B 07 48 8B 80 48 05 00 00 48 39 D0",
             patch:            "E9 00 00 00 00 90",
             expectedOriginal: "0F 84 ? ? ? ?",
             patchOffset:      18
