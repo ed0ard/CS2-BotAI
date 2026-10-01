@@ -113,12 +113,18 @@ internal static class WindowsPatchDefinitions
         patchOffset: 8    // RVA 0x2f1c0c: je+15 → NOP (remove IsWaitingForZoom fire shortcut)
         ),
 
-        // Disabled on Windows in BotAI.Load
+        // Source: cs_bot_weapon.cpp — CCSBot::FireWeaponAtEnemy
+        //   if (IsUsingSniperRifle()) {
+        //     float fProjectedSpread = rangeToEnemy * GetActiveCSWeapon()->GetInaccuracy();
+        //     float fRequiredSpread  = IsUsing(WEAPON_AWP) ? 50.0f : 25.0f;
+        //     if (fProjectedSpread > fRequiredSpread) return;
+        //   }
+        // NOP the `ja` so snipers fire regardless of spread.
         ["AttackState_SkipSniperSpreadCheck"] = (
-            signature: "41 0F 28 C8 0F 57 C0 FF 15 ? ? ? ? F3 0F 10 0D ? ? ? ? 0F 2F C8 0F 86 ? ? ? ? 48 8B 9E ? ? 00 00",
+            signature: "84 C0 74 0A F3 0F 10 ? ? ? ? ? EB 08 F3 0F 10 ? ? ? ? ? ? 0F 2F ? 0F 87 ? ? ? ?",
             patch: "90 90 90 90 90 90",
-            expectedOriginal: "0F 86 ? ? ? ?",
-            patchOffset: 24  // RVA 0x320153: NOP jbe+47B
+            expectedOriginal: "0F 87 ? ? ? ?",
+            patchOffset: 26
         ),
 
 
@@ -234,12 +240,17 @@ internal static class WindowsPatchDefinitions
             patchOffset: 2
         ),
 
-        // IsNoticable
+        // Source: cs_bot_vision.cpp — CCSBot::IsNoticable(player, visParts)
+        // bool CCSBot::IsNoticable(player, visParts) const
+        // {
+        //     return true/false;
+        // }
+        // Patch the function entry so every visible enemy is noticed.
         ["IsNoticable_AlwaysTrue"] = (
-        signature: "40 57 48 83 EC 30 48 8B 05 ? ? ? ? 48 8B F9 80 78 58 00 75 ? 32 C0 48 83 C4 30 5F C3 48 89 5C 24 40",
-        patch: "B0 01 C3",
-        expectedOriginal: "40 57 48",
-        patchOffset: 0
+            signature: "48 89 5C 24 ? 56 57 41 56 48 81 EC ? ? 00 00 0F 29 74 24 ? 4C 8B F1 0F 29 7C 24 ? 48 8B CA 44 0F 29 44 24 ? 41 0F B6 D8 44 0F 29 4C 24 ? 48 8B F2 E8",
+            patch: "B0 01 C3",
+            expectedOriginal: "48 89 5C",
+            patchOffset: 0
         ),
 
         // InViewCone(bot, target):
