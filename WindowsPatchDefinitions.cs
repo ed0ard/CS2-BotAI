@@ -127,13 +127,6 @@ internal static class WindowsPatchDefinitions
         patchOffset: 12    // BLOCK_TIMER_B NOP jbe → DODGE_B (RVA 0x2f2420)
         ),
 
-        ["LowSKill_JumpChance0"] = (
-        signature: "FF 90 90 00 00 00 0F 2F 05 ? ? ? ? 76 11",
-        patch: "EB 40",
-        expectedOriginal: "76 11",
-        patchOffset: 13    // RVA 0x2f4587: jbe +11 → jmp +40 to non-jump 
-        ),
-
         // Source: AttackState::OnEnter
         // skill>0.5 && (Outnumbered || CanSeeSniper) → dodgeChance=100
         // wildcard the jbe displacement (0x14/0x15 depends on
