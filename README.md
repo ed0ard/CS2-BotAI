@@ -1,5 +1,5 @@
 # CS2-BotAI
-Improves the build in bots AI.<br>
+Improves the build in bots' default AI.<br>
 <br>
 Keeps them from running with a knife or nade.<br>
 Keeps them from switching to their knives when in flames.<br>
@@ -11,9 +11,8 @@ Improves their movement comprehensively, especially in dodging and peeking.<br>
 Enhances bots' awareness of their surroundings.<br>
 Improved bomb-related logic.<br>
 <br>
-V 1.8.9<br>
 Built and testing with<br>
-cs# 1.0.371<br>
+cs# 1.0.376<br>
 # Installation
 1. Download the latest BotAI.zip from [Releases](https://github.com/ed0ard/CS2-BotAI/releases)
 
