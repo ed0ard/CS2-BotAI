@@ -243,23 +243,6 @@ internal static class LinuxPatchDefinitions
             patchOffset:      0
         ),
 
-        // IsVisible(player): skip only its initial center-point FOV gate.
-        ["InViewCone_RemoveOuterFOV"] = (
-            signature:        "45 84 F6 0F 85 ? ? ? ? 48 89 DF FF 90 C0 02 00 00",
-            patch:            "90 90 90 90 90 90",
-            expectedOriginal: "0F 85 ? ? ? ?",
-            patchOffset:      3
-        ),
-
-        // IsVisible(position): skip FOV for body samples/positions.
-        // Preserve smoke, entity-validity and line-of-sight checks in both overloads.
-        ["InViewCone_RemoveInnerFOV"] = (
-            signature:        "80 BD 84 FE FF FF 00 74 18 48 8B 7B 18 48 8B B5 88 FE FF FF 48 8B 07 FF 90 B8 09 00 00 84 C0 74 C2",
-            patch:            "EB 18",
-            expectedOriginal: "74 18",
-            patchOffset:      7
-        ),
-
         // CCSBot::Upkeep: remove the additive yaw/pitch drift, matching Windows.
         // Replace only the BotCOS(33 * curtime) / BotSIN(13 * curtime) calls
         // with 0.0f; preserve the shared trig helpers and all other aiming logic.
