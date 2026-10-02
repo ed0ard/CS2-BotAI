@@ -120,7 +120,6 @@ public class BotAI : BasePlugin
         // The removed Windows patch changed a bomb-pickup update, not Reset;
         // Windows m_gameState is +0x5120; +0x5128 is its m_isRoundOver field.
         // Keep native Reset and avoid the unnecessary raw spawn-time write.
-        // Evidence: docs/windows-patch-audit.txt.
         if (_isLinux)
         {
             RegisterEventHandler<EventPlayerSpawn>((@event, info) =>
