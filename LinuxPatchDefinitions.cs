@@ -260,6 +260,23 @@ internal static class LinuxPatchDefinitions
             patchOffset:      7
         ),
 
+        // CCSBot::Upkeep: remove the additive yaw/pitch drift, matching Windows.
+        // Replace only the BotCOS(33 * curtime) / BotSIN(13 * curtime) calls
+        // with 0.0f; preserve the shared trig helpers and all other aiming logic.
+        ["Upkeep_BotCOS_ZeroDrift"] = (
+            signature:        "F3 0F 10 05 ? ? ? ? 49 8B 45 00 F3 0F 59 40 30 E8 ? ? ? ? 49 8B 45 00 F3 0F 59 45 ? F3 0F 58 83 64 59 00 00 F3 0F 11 83 64 59 00 00",
+            patch:            "0F 57 C0 90 90",
+            expectedOriginal: "E8 ? ? ? ?",
+            patchOffset:      17
+        ),
+
+        ["Upkeep_BotSIN_ZeroDrift"] = (
+            signature:        "F3 0F 10 05 ? ? ? ? F3 0F 59 40 30 E8 ? ? ? ? F3 0F 59 45 ? F3 0F 58 83 5C 59 00 00 F3 0F 11 83 5C 59 00 00",
+            patch:            "0F 57 C0 90 90",
+            expectedOriginal: "E8 ? ? ? ?",
+            patchOffset:      13
+        ),
+
         // InvestigateNoiseState::OnEnter: bypass the SELF_DEFENSE disposition
         // gate in the noise-response path. The old signature matched chicken AI.
         ["InvestigateNoise_SkipSelfDefenseCheck"] = (
