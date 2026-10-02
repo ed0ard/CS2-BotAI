@@ -6,20 +6,24 @@ internal static class WindowsPatchDefinitions
         new Dictionary<string, (string signature, string patch, string expectedOriginal, int patchOffset)>()
     {
 
-        // Force HasVisitedEnemySpawn = 1 so bots don't revisit enemy spawn
+        // CCSBot::Reset: initialize the schema-confirmed m_hasVisitedEnemySpawn
+        // (+0x5FD) to true. The old +0x520 signature hit CEconItemSchema instead.
+        // Anchor the surrounding reset stores/call; keep the field offset exact.
         ["HasVisitedEnemySpawn"] = (
-        signature: "40 88 B7 20 05 00 00",
-        patch: "C6 87 20 05 00 00 01",
-        expectedOriginal: "40 88 B7 20 05 00 00",
-        patchOffset: 0
+            signature: "4C 89 B7 ? ? 00 00 48 8D 8C 24 ? ? ? ? 44 88 B7 FD 05 00 00 E8 ? ? ? ? F3 0F 10 87 ? ? 00 00 48 8B F0",
+            patch: "C6 87 FD 05 00 00 01",
+            expectedOriginal: "44 88 B7 FD 05 00 00",
+            patchOffset: 15
         ),
 
-        // NOP the BombState reset to avoid bot confusion
+        // CSGameState::Reset: preserve m_bombState (+0x0C), matching Linux.
+        // Other Reset fields still reset; the spawn handler clears bomb state
+        // when no bomb is planted. The old signature hit OnBombPickedUp.
         ["GameState_Reset"] = (
-        signature: "83 7F 0C 00 74 07 C7 47 0C 00 00 00 00",
-        patch: "0F 1F 80 00 00 00 00",
-        expectedOriginal: "C7 47 0C 00 00 00 00",
-        patchOffset: 6
+            signature: "48 8D 4C 24 ? 45 33 F6 44 89 77 0C E8 ? ? ? ? F3 0F 10 47 18 48 8B F0 0F 2E 00",
+            patch: "90 90 90 90",
+            expectedOriginal: "44 89 77 0C",
+            patchOffset: 8
         ),
 
         // IsSafe() always false in IdleState → bots don't idle near safe areas
@@ -82,7 +86,7 @@ internal static class WindowsPatchDefinitions
         ),
 
         ["AttackState_SkipFireRateCheck"] = (
-        signature: "0F 2F 8B ? ? 00 00 0F 82",
+        signature: "0F 2F 8B AC 00 00 00 0F 82 ? ? ? ? 48 8B CB E8 ? ? ? ? 84 C0 74 7B",
         patch: "90 90 90 90 90 90",
         expectedOriginal: "0F 82 87 00 00 00",
         patchOffset: 7    // VA 0x1802f22a0
@@ -142,11 +146,15 @@ internal static class WindowsPatchDefinitions
         patchOffset: 12    // BLOCK_TIMER_B NOP jbe → DODGE_B (RVA 0x2f2420)
         ),
 
+        // AttackState::Dodge: RandomInt(0, 3) -> RandomInt(0, 2), excluding
+        // action 3 (Jump) while retaining the other dodge actions. The old
+        // LowSKill signature hit CBtActionAim, not this classic combat path.
+        // This does not disable navigation jumps or every behavior-tree jump.
         ["LowSKill_JumpChance0"] = (
-        signature: "FF 90 90 00 00 00 0F 2F 05 ? ? ? ? 76 11",
-        patch: "EB 40",
-        expectedOriginal: "76 11",
-        patchOffset: 13    // RVA 0x2f4587: jbe +11 → jmp +40 to non-jump 
+            signature: "0F 57 C9 48 8B CF E8 ? ? ? ? BA 03 00 00 00 84 C0 74 05 BA 02 00 00 00 33 C9 FF 15 ? ? ? ? 80 7D 43 00",
+            patch: "BA 02 00 00 00",
+            expectedOriginal: "BA 03 00 00 00",
+            patchOffset: 11
         ),
 
         // Source: AttackState::OnEnter
@@ -197,32 +205,34 @@ internal static class WindowsPatchDefinitions
         ),
 
 
+        // Historical Vision_* keys actually patch AttackState::Dodge.
+        // Enter dodge selection regardless of m_isEnemySniperVisible; this
+        // also bypasses the distance/IsEnemyLookingAtMe gates below.
         ["Vision_AlwaysWatchApproachPoints"] = (
-        signature: "80 BF ? ? 00 00 00 75 25 0F 2F",
+        signature: "80 BF C1 5C 00 00 00 75 25 0F 2F 35 ? ? ? ? 77 ? 49 8B ? 48 8B CF E8 ? ? ? ? 84 C0",
         patch: "EB 25",
         expectedOriginal: "75 25",
         patchOffset: 7    // VA 0x180319304: jne→jmp
         ),
 
-        // wildcard the comiss register byte (xmm6/xmm7 varies by build) 
-        // and the jbe displacement. Anchored on movss xmm0,[rax+0xc]; comiss; jbe.
+        // Dodge direction selection: bypass skill > 0.5, not a vision check.
         ["Vision_ApproachBody_SkipSkillCheck"] = (
-            signature: "F3 0F 10 40 0C 0F 2F ? 76 ?",
+            signature: "F3 0F 10 40 0C 0F 2F ? 76 ? 80 BF C1 5C 00 00 00 74 ?",
             patch: "90 90",
             expectedOriginal: "76 ?",
             patchOffset: 8
         ),
 
-        // The trailing cmp byte[reg+0x43] encoding varies
-        // (41 80 7E.. / r14 vs 80 7D.. / rbp), so anchor only on the CanSeeSniper cmp
-        // (cmp byte[rdi+0x5c??],0) + its je.
+        // Dodge direction selection: bypass m_isEnemySniperVisible,
+        // not a hiding-spot check. Retain the following first-dodge flag.
         ["Vision_ApproachBody_SkipHidingSpotCheck"] = (
-            signature: "80 BF ? 5C 00 00 00 74 ?",
+            signature: "F3 0F 10 40 0C 0F 2F ? 76 ? 80 BF C1 5C 00 00 00 74 ?",
             patch: "90 90",
             expectedOriginal: "74 ?",
-            patchOffset: 7
+            patchOffset: 17
         ),
 
+        // Dodge: bypass the 2000-unit enemy-distance limit, not speed.
         ["Vision_SkipIsMovingGate"] = (
             signature: "0F 2F 35 ? ? ? ? 77 ? 49 8B ? 48 8B CF E8 ? ? ? ? 84 C0 75 ?",
             patch: "90 90",
@@ -230,9 +240,8 @@ internal static class WindowsPatchDefinitions
             patchOffset: 7
         ),
 
-        // Wildcard the REX/modrm of the following
-        // mov qword[reg+8],0 (49 C7 46 / r14 vs 48 C7 45 / rbp). Patch flips 75->EB,
-        // keeping the displacement.
+        // Dodge: do not clear the selected action when IsEnemyLookingAtMe
+        // returns false. Keep the timer and movement feasibility checks.
         ["Vision_AlwaysEnterApproachBody"] = (
             signature: "84 C0 75 ? ? C7 ? 08 00 00 00 00 E9 ? ? ? ?",
             patch: "EB",
@@ -253,32 +262,23 @@ internal static class WindowsPatchDefinitions
             patchOffset: 0
         ),
 
-        // InViewCone(bot, target):
-        //      angle = GetFOVToPosition(target) 
-        //      if angle > 60.0f:
-        //          return 0 
-        //      eax = 0
-        //      angle2 = GetFOVToPosition(target)
-        //      eax = (angle2 <= 25.0f) ? 1 : 0
-        //      eax += 1
-        //      return eax   
-        // NOP the outer-FOV jbe so the function falls
-        // through to `xor eax,eax; ret` (returns 0).
-        // the companion InViewCone_RemoveInnerFOV branch is then never reached (as in stable).
+        // IsVisible(player): bypass its initial center-point FOV gate.
+        // The old InViewCone signature patched a zoom-level query instead.
         ["InViewCone_RemoveOuterFOV"] = (
-            signature: "FF 90 ? ? 00 00 0F 2F 05 ? ? ? ? 76 08 33 C0 48 83 C4 20 5B C3 48 8B 03 48 8B CB FF 90 ? ? 00 00",
-            patch: "90 90",
-            expectedOriginal: "76 08",
-            patchOffset: 13
+            signature: "84 DB 74 32 49 8B 75 18 48 8D 55 ? 49 8B CE 48 8B 06 48 8B 98 A8 09 00 00",
+            patch: "EB 32",
+            expectedOriginal: "74 32",
+            patchOffset: 2
         ),
 
+        // IsVisible(position): bypass the FOV gate for body samples/positions.
+        // Preserve smoke, entity-validity and line-of-sight checks in both overloads.
         ["InViewCone_RemoveInnerFOV"] = (
-        signature: "0F 96 C0 FF C0 48 83 C4 20 5B C3",
-        patch: "B0 01 90",
-        expectedOriginal: "0F 96 C0",
-        patchOffset: 0
+            signature: "45 84 ED 74 18 49 8B 4F 18 49 8B D4 48 8B 01 FF 90 A8 09 00 00 84 C0 0F 84 ? ? ? ?",
+            patch: "EB 18",
+            expectedOriginal: "74 18",
+            patchOffset: 3
         ),
-
 
         // CCSBot::Upkeep adds two bot-specific trig results to its persistent
         // look offsets every tick. Replace only those two calls with 0.0f;
