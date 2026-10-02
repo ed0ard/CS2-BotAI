@@ -12,9 +12,11 @@ namespace BotAI;
 
 public record PatchInfo(string Name, nint Address, List<byte> OriginalBytes);
 
-internal static class LinuxBotOffsets
+public static class BotOffsets
 {
-    public const int m_gameState = 0x5100;
+    // Differs by platform: Windows = 0x5120, Linux  = 0x5100.
+    public static readonly int m_gameState =
+        RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 0x5100 : 0x5120;
     // Offsets inside CSGameState
     public const int m_isRoundOver = 0x08;
     public const int m_bombState = 0x0C;
@@ -116,33 +118,26 @@ public class BotAI : BasePlugin
             }
         }
 
-        // Keep the spawn compensation paired with the Linux GameState_Reset patch.
-        // The removed Windows patch changed a bomb-pickup update, not Reset;
-        // Windows m_gameState is +0x5120; +0x5128 is its m_isRoundOver field.
-        // Keep native Reset and avoid the unnecessary raw spawn-time write.
-        if (_isLinux)
+        RegisterEventHandler<EventPlayerSpawn>((@event, info) =>
         {
-            RegisterEventHandler<EventPlayerSpawn>((@event, info) =>
-            {
-                var player = @event.Userid;
-                if (player?.IsValid != true || !player.IsBot) return HookResult.Continue;
+            var player = @event.Userid;
+            if (player?.IsValid != true || !player.IsBot) return HookResult.Continue;
 
-                var pawn = player.PlayerPawn.Value;
-                if (pawn?.IsValid != true
-                    || player.Team <= CsTeam.Spectator
-                    || !pawn.BotAllowActive)
-                    return HookResult.Continue;
-
-                var gameRules = Utilities
-                    .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
-                    .FirstOrDefault()?.GameRules;
-
-                if (gameRules == null || gameRules.BombPlanted) return HookResult.Continue;
-
-                UpdateLinuxBotBombState(pawn, player.PlayerName);
+            var pawn = player.PlayerPawn.Value;
+            if (pawn?.IsValid != true
+                || player.Team <= CsTeam.Spectator
+                || !pawn.BotAllowActive)
                 return HookResult.Continue;
-            });
-        }
+
+            var gameRules = Utilities
+                .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
+                .FirstOrDefault()?.GameRules;
+
+            if (gameRules == null || gameRules.BombPlanted) return HookResult.Continue;
+
+            UpdateBotBombState(pawn, player.PlayerName);
+            return HookResult.Continue;
+        });
 
         Logger.LogInformation($"Applied {_appliedPatches.Count}/{patchDefinitions.Count} patches.");
     }
@@ -226,18 +221,18 @@ public class BotAI : BasePlugin
                .Where(t => t != "?")
                .Select(t => Convert.ToByte(t, 16))];
 
-    private bool UpdateLinuxBotBombState(CCSPlayerPawn pawn, string playerName)
+    private bool UpdateBotBombState(CCSPlayerPawn pawn, string playerName)
     {
         try
         {
             if (pawn?.Bot?.Handle is not { } handle || handle == nint.Zero) return false;
             if (!IsValid(handle)) return false;
 
-            nint gsPtr = handle + LinuxBotOffsets.m_gameState;
+            nint gsPtr = handle + BotOffsets.m_gameState;
             if (!IsValid(gsPtr)) return false;
-            if (Marshal.ReadByte(gsPtr + LinuxBotOffsets.m_isRoundOver) != 0) return true;
+            if (Marshal.ReadByte(gsPtr + BotOffsets.m_isRoundOver) != 0) return true;
 
-            nint bombAddr = gsPtr + LinuxBotOffsets.m_bombState;
+            nint bombAddr = gsPtr + BotOffsets.m_bombState;
             if (!IsValid(bombAddr)) return false;
             if (!MemoryPatch.SetMemAccess(bombAddr, sizeof(int))) return false;
             if (Marshal.ReadInt32(bombAddr) != 0) Marshal.WriteInt32(bombAddr, 0);
@@ -245,7 +240,7 @@ public class BotAI : BasePlugin
         }
         catch (Exception ex)
         {
-            Logger.LogError($"UpdateLinuxBotBombState({playerName}): {ex.Message}");
+            Logger.LogError($"UpdateBotBombState({playerName}): {ex.Message}");
             return false;
         }
     }
