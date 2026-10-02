@@ -14,7 +14,7 @@ public record PatchInfo(string Name, nint Address, List<byte> OriginalBytes);
 
 public static class BotOffsets
 {
-    // Differs by platform: Windows = 0x5120, Linux = 0x50F8.
+    // Differs by platform: Windows = 0x5120, Linux  = 0x50F8.
     public static readonly int m_gameState =
         RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 0x50F8 : 0x5120;
     // Offsets inside CSGameState
@@ -27,9 +27,9 @@ public static class BotOffsets
 [MinimumApiVersion(304)]
 public class BotAI : BasePlugin
 {
-    public override string ModuleName => "Patches - Bot AI";
-    public override string ModuleVersion => "1.8.10";
-    public override string ModuleAuthor => "K4ryuu & Austin (updated by ed0ard & Misaka17032 & XBribo & AmagiReina)";
+    public override string ModuleName => "Bot AI - Patches";
+    public override string ModuleVersion => "1.8.12";
+    public override string ModuleAuthor => "K4ryuu & Austin (updated by ed0ard & XBribo & unicbm & Misaka17032 & AmagiReina)";
     public override string ModuleDescription =>
         "Improve and fix bots' behavior comprehensively";
 
