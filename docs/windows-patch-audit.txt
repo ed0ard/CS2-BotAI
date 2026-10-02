@@ -1,0 +1,48 @@
+Windows verification for PR #10 (2026-10-02)
+
+Binary: server.dll, CS2 1.41.8.8 / ServerVersion 2000922
+SHA-256: 3541e46a3193fcf1151e97ce19cd4daf86c5fdb2889033c2bab1d4cc7f555b9c
+Addresses below are RVAs in this binary, not portable runtime addresses.
+
+1. LowSKill_JumpChance0
+   Old site 0x302AA7 belongs to CBtActionAim's target-body-part path. Its
+   branch patch skips pointer restoration; it is not a combat-jump gate.
+   AttackState RTTI vtable 0x17B8440, Update slot +0x08 -> 0x32AC70;
+   call at 0x32B843 reaches Dodge at 0x3286B0.
+   New site 0x32891D: BA 03 00 00 00 -> BA 02 00 00 00 (mov edx,3 -> 2).
+   The other branch already sets edx=2 at 0x328926; ecx=0 at 0x32892B.
+   Both reach imported RandomInt at 0x32892D (IAT 0x17692E8).
+   Action 3 reaches the virtual Jump call at 0x3289C3 (slot +0x70).
+   CCSBot vtable 0x17AD970 resolves that slot to 0x2CE3C0, which sets
+   IN_JUMP (buttons |= 2) at 0x2CE479. Limiting the upper bound to 2
+   excludes that action while preserving the remaining dodge choices.
+   Scope: classic AttackState dodge; navigation/behavior-tree jumps remain.
+
+2. HasVisitedEnemySpawn
+   Old signature matches 0xFF7C74: mov byte [rdi+0x520],sil in constructor
+   0xFF7680. Its vtable 0x1A083A8 / COL 0x1B91240 names CEconItemSchema.
+   CCSBot schema field record 0x1DA1A30 names m_hasVisitedEnemySpawn at +0x5FD.
+   CCSBot::Reset (0x2DAC60) clears r14d at 0x2DACAE and writes r14b to
+   [rdi+0x5FD] at 0x2DB428. This is the new patch site:
+   44 88 B7 FD 05 00 00 -> C6 87 FD 05 00 00 01 (initialize to true).
+   Independent references: native true store at 0x2D47B2 and the
+   enemy-spawn decision read at 0x32EEE0 access the same +0x5FD field.
+
+3. m_gameState
+   Embedded CSGameState starts at CCSBot+0x5120, not +0x5128.
+   CCSBot::Reset uses lea rcx,[rdi+0x5120] at 0x2DAC91 and calls
+   CSGameState::Reset (0x2DA7D0) at 0x2DAC98. That callee resets:
+     +0x08 m_isRoundOver   at 0x2DA7E4 (absolute bot offset +0x5128)
+     +0x0C m_bombState     at 0x2DA833 (absolute bot offset +0x512C)
+     +0x68 m_plantedBombsite at 0x2DA86F (absolute bot offset +0x5188)
+   Independent caller: lea rcx,[rsi+0x5120] at 0x3305D5 calls
+   GetPlantedBombsite (0x2C58C0), which reads +0x0C and +0x68.
+   Windows retains native Reset and has no spawn-time raw state write.
+   Linux behavior is outside this Windows audit and is unchanged.
+
+Validation: all 39 Windows signatures match once in executable sections;
+all expectedOriginal bytes match. Both relocated replacements preserve
+complete instruction boundaries, and patch ranges do not overlap.
+BotAI.csproj builds with .NET 10. Live gameplay/load-unload testing of these
+two relocated patches has not been performed; one binary is not proof of
+cross-build compatibility.

@@ -6,20 +6,14 @@ internal static class WindowsPatchDefinitions
         new Dictionary<string, (string signature, string patch, string expectedOriginal, int patchOffset)>()
     {
 
-        // Force HasVisitedEnemySpawn = 1 so bots don't revisit enemy spawn
+        // CCSBot::Reset: initialize the schema-confirmed m_hasVisitedEnemySpawn
+        // (+0x5FD) to true. The old +0x520 signature hit CEconItemSchema instead.
+        // Anchor the surrounding reset stores/call; keep the field offset exact.
         ["HasVisitedEnemySpawn"] = (
-        signature: "40 88 B7 20 05 00 00",
-        patch: "C6 87 20 05 00 00 01",
-        expectedOriginal: "40 88 B7 20 05 00 00",
-        patchOffset: 0
-        ),
-
-        // NOP the BombState reset to avoid bot confusion
-        ["GameState_Reset"] = (
-        signature: "83 7F 0C 00 74 07 C7 47 0C 00 00 00 00",
-        patch: "0F 1F 80 00 00 00 00",
-        expectedOriginal: "C7 47 0C 00 00 00 00",
-        patchOffset: 6
+            signature: "4C 89 B7 ? ? 00 00 48 8D 8C 24 ? ? ? ? 44 88 B7 FD 05 00 00 E8 ? ? ? ? F3 0F 10 87 ? ? 00 00 48 8B F0",
+            patch: "C6 87 FD 05 00 00 01",
+            expectedOriginal: "44 88 B7 FD 05 00 00",
+            patchOffset: 15
         ),
 
         // IsSafe() always false in IdleState → bots don't idle near safe areas
@@ -142,11 +136,15 @@ internal static class WindowsPatchDefinitions
         patchOffset: 12    // BLOCK_TIMER_B NOP jbe → DODGE_B (RVA 0x2f2420)
         ),
 
+        // AttackState::Dodge: RandomInt(0, 3) -> RandomInt(0, 2), excluding
+        // action 3 (Jump) while retaining the other dodge actions. The old
+        // LowSKill signature hit CBtActionAim, not this classic combat path.
+        // This does not disable navigation jumps or every behavior-tree jump.
         ["LowSKill_JumpChance0"] = (
-        signature: "FF 90 90 00 00 00 0F 2F 05 ? ? ? ? 76 11",
-        patch: "EB 40",
-        expectedOriginal: "76 11",
-        patchOffset: 13    // RVA 0x2f4587: jbe +11 → jmp +40 to non-jump 
+            signature: "0F 57 C9 48 8B CF E8 ? ? ? ? BA 03 00 00 00 84 C0 74 05 BA 02 00 00 00 33 C9 FF 15 ? ? ? ? 80 7D 43 00",
+            patch: "BA 02 00 00 00",
+            expectedOriginal: "BA 03 00 00 00",
+            patchOffset: 11
         ),
 
         // Source: AttackState::OnEnter
@@ -252,33 +250,6 @@ internal static class WindowsPatchDefinitions
             expectedOriginal: "48 89 5C",
             patchOffset: 0
         ),
-
-        // InViewCone(bot, target):
-        //      angle = GetFOVToPosition(target) 
-        //      if angle > 60.0f:
-        //          return 0 
-        //      eax = 0
-        //      angle2 = GetFOVToPosition(target)
-        //      eax = (angle2 <= 25.0f) ? 1 : 0
-        //      eax += 1
-        //      return eax   
-        // NOP the outer-FOV jbe so the function falls
-        // through to `xor eax,eax; ret` (returns 0).
-        // the companion InViewCone_RemoveInnerFOV branch is then never reached (as in stable).
-        ["InViewCone_RemoveOuterFOV"] = (
-            signature: "FF 90 ? ? 00 00 0F 2F 05 ? ? ? ? 76 08 33 C0 48 83 C4 20 5B C3 48 8B 03 48 8B CB FF 90 ? ? 00 00",
-            patch: "90 90",
-            expectedOriginal: "76 08",
-            patchOffset: 13
-        ),
-
-        ["InViewCone_RemoveInnerFOV"] = (
-        signature: "0F 96 C0 FF C0 48 83 C4 20 5B C3",
-        patch: "B0 01 90",
-        expectedOriginal: "0F 96 C0",
-        patchOffset: 0
-        ),
-
 
         // CCSBot::Upkeep adds two bot-specific trig results to its persistent
         // look offsets every tick. Replace only those two calls with 0.0f;
