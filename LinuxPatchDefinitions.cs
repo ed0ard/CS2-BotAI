@@ -5,37 +5,41 @@ internal static class LinuxPatchDefinitions
     internal static IReadOnlyDictionary<string, (string signature, string patch, string expectedOriginal, int patchOffset)> All { get; } =
         new Dictionary<string, (string signature, string patch, string expectedOriginal, int patchOffset)>()
         {
-        // Confirmed against /home/misaka/cs2/game/csgo/bin/linuxsteamrt64/libserver.so (2026-06-09).
-        // Force HasVisitedEnemySpawn = 1 so bots don't revisit enemy spawn.
+        // Verified against libserver.so SHA256:
+        // d81faffb3e3a5f2001932b3b55a96c4ac05c2ed4b99702b06fc416b6e9bb5300.
+        // Keep instruction/field context fixed; wildcard RIP-relative addresses and branch targets.
+        // Historical keys are retained; comments describe the verified native behavior.
+
+        // CCSBot::Reset: initialize schema-confirmed m_hasVisitedEnemySpawn (+0x5F5).
         ["HasVisitedEnemySpawn"] = (
-            signature:        "40 88 B7 6C 07 00 00 C3",
-            patch:            "C6 87 6C 07 00 00 01",
-            expectedOriginal: "40 88 B7 6C 07 00 00",
-            patchOffset:      0
+            signature:        "48 C7 83 20 02 00 00 00 00 00 00 0F 2E A3 00 06 00 00 C6 83 F5 05 00 00 00 0F 8A ? ? ? ? 0F 85 ? ? ? ?",
+            patch:            "C6 83 F5 05 00 00 01",
+            expectedOriginal: "C6 83 F5 05 00 00 00",
+            patchOffset:      18
         ),
 
         // NOP the BombState reset in CSGameState::Reset() (linux-specific bytes).
         ["GameState_Reset"] = (
-            signature:        "C6 47 08 00 48 89 07 48 C7 47 0C 00 00 00 00 C7 47 14 00 00 00 00 C3",
-            patch:            "0F 1F 84 00 00 00 00 00",
-            expectedOriginal: "48 C7 47 0C 00 00 00 00",
-            patchOffset:      7
+            signature:        "0F 2E 43 18 C7 43 0C 00 00 00 00 0F 8A ? ? ? ? 0F 85 ? ? ? ? 48 8B 05 ? ? ? ? C6 43 6C 00 C7 43 68 FF FF FF FF",
+            patch:            "0F 1F 80 00 00 00 00",
+            expectedOriginal: "C7 43 0C 00 00 00 00",
+            patchOffset:      4
         ),
 
-        // IdleState::OnUpdate: treat IsSafe() as false so bots don't idle near safe areas.
+        // IdleState::OnUpdate: skip the safe-time grenade/knife selection branch.
         ["Idle_IsSafeAlwaysFalse"] = (
-            signature:        "48 89 DF E8 ? ? ? ? 84 C0 75 B3 48 8B 5D F8 C9 C3",
-            patch:            "90 90",
-            expectedOriginal: "75 B3",
-            patchOffset:      10
+            signature:        "E8 ? ? ? ? 84 C0 0F 85 ? ? ? ? 4C 8D B3 F8 50 00 00 4C 89 F7 E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 80 BB 88 52 00 00 00",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      7
         ),
 
         // EscapeFromBombState::OnEnter tail-call to EquipKnife() -> ret.
         ["EscapeFromBomb_OnEnter_NoEquipKnife"] = (
-            signature:        "C6 83 7C 4F 00 00 00 48 8B 5D F8 C9 E9 ? ? ? ?",
+            signature:        "C6 83 4C 4F 00 00 00 48 89 DF C6 83 74 4F 00 00 00 48 8B 5D F8 C9 E9 ? ? ? ?",
             patch:            "C3 90 90 90 90",
             expectedOriginal: "E9 ? ? ? ?",
-            patchOffset:      12
+            patchOffset:      22
         ),
 
         // EscapeFromBombState::OnUpdate call to EquipKnife() -> NOP.
@@ -48,7 +52,7 @@ internal static class LinuxPatchDefinitions
 
         // EscapeFromFlamesState::OnEnter call to EquipKnife() -> NOP.
         ["EscapeFromFlames_OnEnter_NoEquipKnife"] = (
-            signature:        "C6 83 54 4F 00 00 00 48 89 DF C6 83 7C 4F 00 00 00 E8 ? ? ? ? F3 0F 10 1D",
+            signature:        "C6 83 4C 4F 00 00 00 48 89 DF C6 83 74 4F 00 00 00 E8 ? ? ? ? F3 0F 10 1D ? ? ? ? 49 C7 44 24 20 00 00 00 00 41 0F 2E 5C 24 14",
             patch:            "90 90 90 90 90",
             expectedOriginal: "E8 ? ? ? ?",
             patchOffset:      17
@@ -76,15 +80,24 @@ internal static class LinuxPatchDefinitions
             patchOffset:      26
         ),
 
-        // Skip fire-rate check in AttackState::Update for low-latency patch.
+        // CBtActionAttack: bypass the next-shot timestamp gate (+0xAC), matching Windows.
         ["AttackState_SkipFireRateCheck"] = (
-            signature:        "0F 2F 93 A0 07 00 00 0F 82 ? ? ? ?",
+            signature:        "0F 2F 8B AC 00 00 00 0F 82 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 8B 7B 18",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 82 ? ? ? ?",
             patchOffset:      7
         ),
 
-        // AttackState::OnUpdate: keep the fire shortcut from returning early.
+        // CBtActionAttack: clear the release-between-shots flag (r12b),
+        // the counterpart of Windows' bpl flag. Preserve the trigger output write.
+        ["SprayAllDistances_ForceHoldTrigger"] = (
+            signature:        "F3 0F 10 83 A0 00 00 00 66 0F EF C9 0F 2F C1 76 0C 49 8B 45 00 0F 2F 40 30 41 0F 97 C4 48 8B 83 98 00 00 00",
+            patch:            "45 31 E4 90",
+            expectedOriginal: "41 0F 97 C4",
+            patchOffset:      25
+        ),
+
+        // AttackState::OnUpdate: bypass the target visibility gate before firing.
         ["AttackState_SkipSteadyFireShortcut"] = (
             signature:        "BA 01 00 00 00 48 89 DF 48 89 C6 E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 89 DF E8 ? ? ? ?",
             patch:            "90 90 90 90 90 90",
@@ -92,7 +105,7 @@ internal static class LinuxPatchDefinitions
             patchOffset:      18
         ),
 
-        // AttackState::OnUpdate: don't leave the zoom/lineup shortcut path early.
+        // AttackState::OnUpdate: bypass the nearby-enemy-gunfire gate.
         ["AttackState_SkipZoomFireShortcut"] = (
             signature:        "F3 0F 10 05 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 83 BB C8 05 00 00 14",
             patch:            "90 90 90 90 90 90",
@@ -100,11 +113,12 @@ internal static class LinuxPatchDefinitions
             patchOffset:      18
         ),
 
-        // AttackState::OnUpdate: force the continuous-fire flag before SetLookAt().
-        ["SprayAllDistances_ForceHoldTrigger"] = (
-            signature:        "F3 0F 10 45 90 48 83 C4 68 4C 89 FE 48 89 DF 5B BA 01 00 00 00 41 5C 41 5D 41 5E 41 5F 5D E9 ? ? ? ?",
-            patch:            "31 D2 90 90 90",
-            expectedOriginal: "BA 01 00 00 00",
+        // FireWeaponAtEnemy: ignore projected sniper spread (range * inaccuracy).
+        // Keep the preceding weapon/target validity checks and fire command.
+        ["AttackState_SkipSniperSpreadCheck"] = (
+            signature:        "F3 0F 10 05 ? ? ? ? 66 41 0F 6E EE 0F 2F E8 0F 87 ? ? ? ? 48 89 DF E8 ? ? ? ? 48 89 DF F3 0F 10 40 08",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 87 ? ? ? ?",
             patchOffset:      16
         ),
 
@@ -116,197 +130,182 @@ internal static class LinuxPatchDefinitions
             patchOffset:      18
         ),
 
-        // AttackState::OnUpdate: skip the CanSeeSniper retreat block.
-        // 1.8.9: only the opcode byte is rewritten (je -> jmp); the rel8 displacement
-        // stays whatever the binary shipped with, so it can never go stale.
+        // AttackState::OnUpdate: ignore CanSeeSniper as a reason to retreat.
+        // Keep the independent pinned-down and outnumbered conditions.
         ["AttackState_RetreatOnSniper_Disable"] = (
-            signature:        "48 8B 07 48 8D 15 ? ? ? ? 48 8B 80 38 05 00 00 48 39 D0 0F 85 ? ? ? ? 80 BF B8 05 00 00 00 74 73 4C 8D 35",
-            patch:            "EB",
-            expectedOriginal: "74",
-            patchOffset:      33
+            signature:        "80 BB 99 5C 00 00 00 0F 85 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      7
         ),
 
-        // AttackState::OnUpdate: don't leave the nearby-fire threat path because spread is zero.
-        ["AttackState_SkipSniperSpreadCheck"] = (
-            signature:        "83 BB C8 05 00 00 14 48 89 DF 0F 84 ? ? ? ? E8 ? ? ? ? F3 0F 10 8B D8 52 00 00 66 0F EF C0 0F 2F C8 0F 86 ? ? ? ? F3 0F 10 0D",
+        // CBtActionAttack: bypass the trace-result gate before firing, matching
+        // Windows' historical CanStrafe key; this is not a retreat/look-at gate.
+        ["AttackState_CanStrafe_jne"] = (
+            signature:        "0F 2F 8B AC 00 00 00 0F 82 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 8B 7B 18",
             patch:            "90 90 90 90 90 90",
-            expectedOriginal: "0F 86 ? ? ? ?",
-            patchOffset:      36
+            expectedOriginal: "0F 84 ? ? ? ?",
+            patchOffset:      23
         ),
 
         // Keep bot movement behavior when seeing enemies.
         ["AllSkill_KeepMoving_WhenSeeSniper"] = (
-            signature:        "0F 2F 05 ? ? ? ? 76 0D 80 BB C4 05 00 00 00 0F 85",
+            signature:        "0F 2F 05 ? ? ? ? 76 0D 80 BB C4 05 00 00 00 0F 85 ? ? ? ? 0F B6 05 ? ? ? ? 84 C0 0F 84 ? ? ? ?",
             patch:            "90 90",
             expectedOriginal: "76 0D",
             patchOffset:      7
         ),
 
-        ["AttackState_CanStrafe_jne"] = (
-            signature:        "BE 01 00 00 00 48 89 DF E8 ? ? ? ? 84 C0 74 5D 80 BB A1 5C 00 00 00 0F 84",
-            patch:            "90 90",
-            expectedOriginal: "74 5D",
-            patchOffset:      15
-        ),
-
         // AttackState::OnEnter: force the reload-dodge chance flag true.
         ["AttackState_DodgeDuringReload"] = (
-            signature:        "F3 0F 59 40 08 0F 2F C8 41 0F 97 44 24 44 48 81 C4 A8 01 00 00",
+            signature:        "E8 ? ? ? ? 48 8B 43 08 0F 28 C8 66 41 0F 6E C5 F3 0F 59 40 08 0F 2F C8 41 0F 97 44 24 44 48 81 C4 A8 01 00 00",
             patch:            "41 C6 44 24 44 01",
             expectedOriginal: "41 0F 97 44 24 44",
-            patchOffset:      8
+            patchOffset:      25
         ),
 
         // AttackState::OnEnter: force the crouch-dodge chance flag true.
         ["SniperCrouchDodge_jb"] = (
-            signature:        "0F 2F F8 66 0F EF C0 41 0F 93 44 24 42 E8 ? ? ? ? 48 8B 43 08",
+            signature:        "66 41 0F 6E FE F3 0F 10 0D ? ? ? ? 0F 2F F8 66 0F EF C0 41 0F 93 44 24 42 E8 ? ? ? ? 48 8B 43 08 0F 28 C8",
             patch:            "41 C6 44 24 42 01",
             expectedOriginal: "41 0F 93 44 24 42",
-            patchOffset:      7
+            patchOffset:      20
         ),
 
         // AttackState::OnEnter: don't require the current weapon to be a sniper for dodge A.
         ["SniperDodge_SkipIsSniper_DodgeA"] = (
-            signature:        "48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 44 8B 35 ? ? ? ? F3 0F 10 0D",
+            signature:        "48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 44 8B 35 ? ? ? ? F3 0F 10 0D ? ? ? ? 66 0F EF C0 E8 ? ? ? ? 66 41 0F 6E D6 0F 2F D0 77 ?",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 84 ? ? ? ?",
             patchOffset:      10
         ),
 
-        // Keep low-skill bots from delaying dodge transitions.
-        // Deliberately still hardcoded: the new rel8 target (S+0x42) is a third
-        // location ("non-jump path"), not the original branch target or fall-through,
-        // so there is nothing at the site to derive it from. Needs its own anchor
-        // signature to become drift-proof.
+        // AttackState::Dodge: RandomInt(0, 3) -> RandomInt(0, 2), excluding JUMP.
+        // This leaves navigation jumps and other jump callers unchanged.
         ["LowSKill_JumpChance0"] = (
-            signature:        "4C 0F 2F 05 ? ? ? ? 76 11",
-            patch:            "EB 40",
-            expectedOriginal: "76 11",
+            signature:        "F3 41 0F 5C 86 00 06 00 00 0F 2F C5 0F 83 ? ? ? ? BE 03 00 00 00 31 FF E8 ? ? ? ? E9 ? ? ? ?",
+            patch:            "BE 02 00 00 00",
+            expectedOriginal: "BE 03 00 00 00",
+            patchOffset:      18
+        ),
+
+        // Historical Vision_* keys actually control AttackState::Dodge on Windows.
+        // Use the same native behavior here, without UpdateLookAround code caves.
+        // Enter dodge selection regardless of m_isEnemySniperVisible; this also
+        // bypasses the distance and IsEnemyLookingAtMe tests below.
+        ["Vision_AlwaysWatchApproachPoints"] = (
+            signature:        "41 80 BE 99 5C 00 00 00 4C 8D 6D A8 0F 85 ? ? ? ? 0F 2F 05 ? ? ? ? 0F 86 ? ? ? ? 48 C7 43 08 00 00 00 00",
+            patch:            "E9 00 00 00 00 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      12
+        ),
+
+        // Dodge direction selection: bypass skill > 0.5, not a vision check.
+        ["Vision_ApproachBody_SkipSkillCheck"] = (
+            signature:        "49 8B 46 08 F3 0F 10 48 0C 0F 2F 0D ? ? ? ? 0F B6 43 43 0F 86 ? ? ? ? 41 80 BE 99 5C 00 00 00 74 27",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 86 ? ? ? ?",
+            patchOffset:      20
+        ),
+
+        // Dodge direction selection: bypass m_isEnemySniperVisible,
+        // not a hiding-spot check. Preserve the following first-dodge flag.
+        ["Vision_ApproachBody_SkipHidingSpotCheck"] = (
+            signature:        "41 80 BE 99 5C 00 00 00 74 27 84 C0 0F 85 ? ? ? ? 83 7B 08 01 B8 02 00 00 00",
+            patch:            "90 90",
+            expectedOriginal: "74 27",
             patchOffset:      8
         ),
 
-        // CCSBot::UpdateLookAround: ignore the movement timer gate.
+        // Dodge: bypass the 2000-unit enemy-distance limit, not speed.
         ["Vision_SkipIsMovingGate"] = (
-            signature:        "F3 0F 10 83 00 06 00 00 66 0F EF C9 0F 2F C1 7A 08 74 06 0F 87 ? ? ? ?",
-            patch:            "90 90 90 90 90 90",
-            expectedOriginal: "0F 87 ? ? ? ?",
-            patchOffset:      19
+            signature:        "41 80 BE 99 5C 00 00 00 4C 8D 6D A8 0F 85 ? ? ? ? 0F 2F 05 ? ? ? ? 0F 86 ? ? ? ? 48 C7 43 08 00 00 00 00",
+            patch:            "E9 00 00 00 00 90",
+            expectedOriginal: "0F 86 ? ? ? ?",
+            patchOffset:      25
         ),
 
-        // 1.8.9: all `00 00 00 00` rel32 fields in the cave pairs below are COMPUTED at
-        // load time from the resolved addresses of both pair members (see
-        // LinuxDisplacementFixups). The cave<->site distance spans function boundaries
-        // and changes on every game update — hardcoding it is what used to make a
-        // sig-matched pair jump into the wrong bytes after build drift.
-        ["Vision_AlwaysEnterApproachBody_Cave"] = (
-            signature:        "48 89 DF FF D0 E9 ? ? ? ? CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC",
-            patch:            "48 83 7B 18 00 0F 84 00 00 00 00 E9 00 00 00 00",
-            expectedOriginal: "CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC",
-            patchOffset:      10
-        ),
-
-        // Always take approach-body path in Vision logic.
+        // Dodge: do not clear the action when the inlined IsEnemyLookingAtMe
+        // dot-product test fails. Keep the timer and movement feasibility checks.
         ["Vision_AlwaysEnterApproachBody"] = (
-            signature:        "80 BB 39 04 00 00 00 0F 85 ? ? ? ? E9 ? ? ? ? 66 0F 1F 44 00 00 48 89 DF",
-            patch:            "E9 00 00 00 00 90",
-            expectedOriginal: "0F 85 ? ? ? ?",
-            patchOffset:      7
-        ),
-
-        ["Vision_AlwaysWatchApproachPoints_Cave"] = (
-            signature:        "F3 0F 11 4D A8 E9 ? ? ? ? CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC",
-            patch:            "48 83 7B 18 00 0F 84 00 00 00 00 E9 00 00 00 00",
-            expectedOriginal: "CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC",
-            patchOffset:      10
-        ),
-
-        // CCSBot::UpdateLookAround: skip the skill threshold before approach-body checks.
-        ["Vision_AlwaysWatchApproachPoints"] = (
-            signature:        "F3 0F 58 85 EC FE FF FF 80 BB F0 54 00 00 00 F3 0F 11 83 28 53 00 00 0F 84 ? ? ? ? F3 0F 10 1D",
-            patch:            "E9 00 00 00 00 90",
-            expectedOriginal: "0F 84 ? ? ? ?",
-            patchOffset:      23
-        ),
-
-        // Signature pins all 32 padding bytes the patch writes (was 30 — the last two
-        // patch bytes were only covered by expectedOriginal, not the signature).
-        ["Vision_AlwaysWatchApproachPoints_LoopEntry_Cave"] = (
-            signature:        "48 8B 07 FF 50 20 E9 ? ? ? ? CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC",
-            patch:            "49 8B 7F 10 48 85 FF 0F 84 00 00 00 00 80 BA 24 06 00 00 02 75 05 BE 03 00 00 00 E9 00 00 00 00",
-            expectedOriginal: "CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC",
-            patchOffset:      11
-        ),
-
-        ["Vision_AlwaysWatchApproachPoints_LoopEntry"] = (
-            signature:        "49 8B 56 18 BE 02 00 00 00 49 8B 7F 10 80 BA 24 06 00 00 02",
-            patch:            "E9 00 00 00 00 90 90 90 90 90 90",
-            expectedOriginal: "49 8B 7F 10 80 BA 24 06 00 00 02",
-            patchOffset:      9
-        ),
-
-        // CCSBot::UpdateLookAround: don't leave the approach-body path when the hiding spot cone check fails.
-        ["Vision_ApproachBody_SkipHidingSpotCheck"] = (
-            signature:        "48 89 DF E8 ? ? ? ? 85 C0 0F 84 ? ? ? ? 48 8B 03 48 8D 15 ? ? ? ? 48 8B 80 B0 00 00 00",
+            signature:        "F3 0F 59 4D C4 F3 0F 58 C1 66 0F EF C9 0F 2F C8 0F 86 ? ? ? ? 66 0F 1F 44 00 00 4C 8D 25 ? ? ? ?",
             patch:            "90 90 90 90 90 90",
-            expectedOriginal: "0F 84 ? ? ? ?",
-            patchOffset:      10
+            expectedOriginal: "0F 86 ? ? ? ?",
+            patchOffset:      16
         ),
 
-        // Keep this entry as a Linux no-op for now. The Windows patch targets a noticable
-        // helper, but current Linux builds inline that path into CCSBot::IsVisible(player).
-        // Returning true from the function entry causes wall visibility; jumping over the
-        // inline gate crashes when players connect on the current server build.
+        // IsNoticable(player, visibleParts), called after IsVisible succeeds:
+        // always notice a visible enemy. Do not return true from IsVisible itself.
         ["IsNoticable_AlwaysTrue"] = (
-            signature:        "55 48 8D 05 ? ? ? ? 48 89 E5 41 57 4C 8D 7D B0 41 56 41 89 D6 41 55 4C 89 FA",
-            patch:            "55 48 8D",
-            expectedOriginal: "55 48 8D",
+            signature:        "55 48 89 E5 41 56 41 89 D6 41 55 41 54 49 89 FC 48 89 F7 53 48 89 F3 48 83 EC 20 E8 ? ? ? ? 48 85 C0 74 2D",
+            patch:            "B0 01 C3 90",
+            expectedOriginal: "55 48 89 E5",
             patchOffset:      0
         ),
 
-        // CCSBot::InViewCone: do not reject targets outside the 60-degree outer FOV.
+        // IsVisible(player): skip only its initial center-point FOV gate.
         ["InViewCone_RemoveOuterFOV"] = (
-            signature:        "48 8B 47 18 48 8B 98 48 0D 00 00 48 8B 03 48 89 DF FF 90 E8 00 00 00 31 C0 0F 2F 05 ? ? ? ? 77 20",
-            patch:            "90 90",
-            expectedOriginal: "77 20",
-            patchOffset:      32
+            signature:        "45 84 F6 0F 85 ? ? ? ? 48 89 DF FF 90 C0 02 00 00",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      3
         ),
 
-        // CCSBot::InViewCone: treat all accepted targets as inside the inner cone.
+        // IsVisible(position): skip FOV for body samples/positions.
+        // Preserve smoke, entity-validity and line-of-sight checks in both overloads.
         ["InViewCone_RemoveInnerFOV"] = (
-            signature:        "FF 90 E8 00 00 00 B8 01 00 00 00 BA 02 00 00 00 0F 2F 05 ? ? ? ? 0F 46 C2 48 8B 5D F8 C9 C3",
-            patch:            "89 D0 90",
-            expectedOriginal: "0F 46 C2",
-            patchOffset:      23
+            signature:        "80 BD 84 FE FF FF 00 74 18 48 8B 7B 18 48 8B B5 88 FE FF FF 48 8B 07 FF 90 B8 09 00 00 84 C0 74 C2",
+            patch:            "EB 18",
+            expectedOriginal: "74 18",
+            patchOffset:      7
         ),
 
-        // Keep InvestigateNoise always open in the same way as Windows.
+        // CCSBot::Upkeep: remove the additive yaw/pitch drift, matching Windows.
+        // Replace only the BotCOS(33 * curtime) / BotSIN(13 * curtime) calls
+        // with 0.0f; preserve the shared trig helpers and all other aiming logic.
+        ["Upkeep_BotCOS_ZeroDrift"] = (
+            signature:        "F3 0F 10 05 ? ? ? ? 49 8B 45 00 F3 0F 59 40 30 E8 ? ? ? ? 49 8B 45 00 F3 0F 59 45 ? F3 0F 58 83 64 59 00 00 F3 0F 11 83 64 59 00 00",
+            patch:            "0F 57 C0 90 90",
+            expectedOriginal: "E8 ? ? ? ?",
+            patchOffset:      17
+        ),
+
+        ["Upkeep_BotSIN_ZeroDrift"] = (
+            signature:        "F3 0F 10 05 ? ? ? ? F3 0F 59 40 30 E8 ? ? ? ? F3 0F 59 45 ? F3 0F 58 83 5C 59 00 00 F3 0F 11 83 5C 59 00 00",
+            patch:            "0F 57 C0 90 90",
+            expectedOriginal: "E8 ? ? ? ?",
+            patchOffset:      13
+        ),
+
+        // InvestigateNoiseState::OnEnter: bypass the SELF_DEFENSE disposition
+        // gate in the noise-response path. The old signature matched chicken AI.
         ["InvestigateNoise_SkipSelfDefenseCheck"] = (
-            signature:        "83 BB ? ? 00 00 02 74 1E",
-            patch:            "90 90",
-            expectedOriginal: "74 1E",
+            signature:        "83 BB F0 52 00 00 02 0F 84 ? ? ? ? F3 0F 10 83 D8 52 00 00 31 C0 66 0F EF DB",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 84 ? ? ? ?",
             patchOffset:      7
         ),
 
         // CCSBot::OnAudibleEvent: accept sounds regardless of distance.
         ["OnAudibleEvent_GlobalHearRange"] = (
-            signature:        "F3 0F 51 ED 0F 2F E5 F3 0F 11 AD 2C FF FF FF 0F 86 ? ? ? ? 4C 89 EF",
+            signature:        "F3 0F 51 D2 0F 2F F2 0F 86 ? ? ? ? 4C 89 EF F3 0F 11 8D 28 FF FF FF F3 0F 11 95 2C FF FF FF",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 86 ? ? ? ?",
-            patchOffset:      15
+            patchOffset:      7
         ),
 
         // Idle/bomb-search fallback: GetNextBombsiteToSearch() -> GetPlantedBombsite().
-        // Deliberately left hardcoded on BOTH sides (values from CS2-BotAI's 14172
-        // revalidation): the call retargets one game function to a sibling function,
+        // Deliberately left hardcoded on BOTH sides (values from the verified binary
+        // above): the call retargets one game function to a sibling function,
         // so there is nothing at the patch site to compute the new displacement from.
         // Hardcoding expectedOriginal keeps it fail-safe — on build drift validation
         // stops matching and the patch is skipped cleanly rather than writing a stale
         // call target. A future drift-proof version would resolve GetPlantedBombsite
         // via its own signature and compute the displacement like the cave pairs.
         ["TBot_BombsiteSearch_UseKnownPlantedSite"] = (
-            signature:        "48 8B BB 08 5E 00 00 E8 ? ? ? ? 4C 89 F7 E8 ? ? ? ? 49 8B 3C 24 31 F6",
-            patch:            "E8 4C 1D F6 FF",   // 14172: call GetPlantedBombsite
-            expectedOriginal: "E8 3C 20 F6 FF",   // 14172: call GetNextBombsiteToSearch
+            signature:        "48 8B BB 00 5E 00 00 E8 ? ? ? ? 4C 89 F7 E8 AC B4 F6 FF 49 8B 3C 24 31 F6 85 C0 78 ? 3B 87 A0 21 00 00 7D ?",
+            patch:            "E8 BC B1 F6 FF",   // call GetPlantedBombsite
+            expectedOriginal: "E8 AC B4 F6 FF",   // call GetNextBombsiteToSearch
             patchOffset:      15
         ),
 
@@ -332,7 +331,7 @@ internal static class LinuxPatchDefinitions
         // is 5 — same target, instruction shrinks by one). expectedOriginal wildcards the
         // displacement so validation survives game updates.
         ["OnBombPlanted_AllBotsLearnSite"] = (
-            signature:        "48 8B 83 00 51 00 00 48 8B 40 18 80 B8 24 06 00 00 02 0F 84 ? ? ? ? 48 8B 7B 18",
+            signature:        "48 8B 83 F8 50 00 00 48 8B 40 18 80 B8 24 06 00 00 02 0F 84 ? ? ? ? 48 8B 7B 18 48 8D 15 ? ? ? ? 48 8B 07 48 8B 80 48 05 00 00 48 39 D0",
             patch:            "E9 00 00 00 00 90",
             expectedOriginal: "0F 84 ? ? ? ?",
             patchOffset:      18
@@ -348,7 +347,7 @@ internal static class LinuxPatchDefinitions
 
         // DefuseBombState::OnUpdate: SetDisposition(SELF_DEFENSE) -> ENGAGE_AND_INVESTIGATE.
         ["DefuseBombState_OnUpdate_EngageAndInvestigate"] = (
-            signature:        "55 48 8D BE 00 51 00 00 48 89 E5 41 54 53 48 89 F3 E8 ? ? ? ? BE 02 00 00 00 48 89 DF 49 89 C4 E8 ? ? ? ?",
+            signature:        "55 48 8D BE ? ? 00 00 48 89 E5 41 54 53 48 89 F3 E8 ? ? ? ? BE 02 00 00 00 48 89 DF 49 89 C4 E8 ? ? ? ?",
             patch:            "BE 00 00 00 00",
             expectedOriginal: "BE 02 00 00 00",
             patchOffset:      22
@@ -356,7 +355,7 @@ internal static class LinuxPatchDefinitions
 
         // DefuseBombState::OnEnter: SetDisposition(SELF_DEFENSE) -> ENGAGE_AND_INVESTIGATE.
         ["DefuseBombState_OnEnter_EngageAndInvestigate"] = (
-            signature:        "55 48 89 E5 41 54 53 48 89 F3 BE 02 00 00 00 48 89 DF E8 ? ? ? ? 4C 8B A3 08 5E 00 00",
+            signature:        "55 48 89 E5 41 54 53 48 89 F3 BE 02 00 00 00 48 89 DF E8 ? ? ? ? 4C 8B A3 ? ? 00 00",
             patch:            "BE 00 00 00 00",
             expectedOriginal: "BE 02 00 00 00",
             patchOffset:      10
@@ -364,10 +363,10 @@ internal static class LinuxPatchDefinitions
 
         // Disable flashbang avoidance SetLookAt/StopAiming block.
         ["FlashbangAvoidance_Disable"] = (
-            signature:        "48 8D 35 ? ? ? ? 4C 89 E7 49 C7 84 24 60 53 00 00 00 00 00 00 0F 5C C2 F3 0F 11 4D A0 F3 0F 10 0D ? ? ? ? 0F 13 45 98 F3 0F 10 05 ? ? ? ? E8 ? ? ? ? 41 C6 84 24 54 5C 00 00 00",
-            patch:            "90 90 90 90 90 90 90 90 90 90 90 90 90 90",
-            expectedOriginal: "E8 ? ? ? ? 41 C6 84 24 54 5C 00 00 00",
-            patchOffset:      50
+            signature:        "0F 5C C2 48 8D 35 ? ? ? ? F3 0F 11 4D ? F3 0F 10 0D ? ? ? ? 0F 13 45 ? F3 0F 10 05 ? ? ? ? E8 ? ? ? ? C6 83 ? ? 00 00 00",
+            patch:            "90 90 90 90 90 90 90 90 90 90 90 90",
+            expectedOriginal: "E8 ? ? ? ? C6 83 ? ? 00 00 00",
+            patchOffset:      35
         )
     };
 }
