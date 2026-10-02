@@ -8,7 +8,15 @@ internal static class LinuxPatchDefinitions
         // Verified against libserver.so SHA256:
         // d81faffb3e3a5f2001932b3b55a96c4ac05c2ed4b99702b06fc416b6e9bb5300.
         // Keep instruction/field context fixed; wildcard RIP-relative addresses and branch targets.
-        // Misidentified entity, zoom, retreat and vision patches are intentionally omitted.
+        // Historical keys are retained; comments describe the verified native behavior.
+
+        // CCSBot::Reset: initialize schema-confirmed m_hasVisitedEnemySpawn (+0x5F5).
+        ["HasVisitedEnemySpawn"] = (
+            signature:        "48 C7 83 20 02 00 00 00 00 00 00 0F 2E A3 00 06 00 00 C6 83 F5 05 00 00 00 0F 8A ? ? ? ? 0F 85 ? ? ? ?",
+            patch:            "C6 83 F5 05 00 00 01",
+            expectedOriginal: "C6 83 F5 05 00 00 00",
+            patchOffset:      18
+        ),
 
         // NOP the BombState reset in CSGameState::Reset() (linux-specific bytes).
         ["GameState_Reset"] = (
@@ -72,6 +80,23 @@ internal static class LinuxPatchDefinitions
             patchOffset:      26
         ),
 
+        // CBtActionAttack: bypass the next-shot timestamp gate (+0xAC), matching Windows.
+        ["AttackState_SkipFireRateCheck"] = (
+            signature:        "0F 2F 8B AC 00 00 00 0F 82 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 8B 7B 18",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 82 ? ? ? ?",
+            patchOffset:      7
+        ),
+
+        // CBtActionAttack: clear the release-between-shots flag (r12b),
+        // the counterpart of Windows' bpl flag. Preserve the trigger output write.
+        ["SprayAllDistances_ForceHoldTrigger"] = (
+            signature:        "F3 0F 10 83 A0 00 00 00 66 0F EF C9 0F 2F C1 76 0C 49 8B 45 00 0F 2F 40 30 41 0F 97 C4 48 8B 83 98 00 00 00",
+            patch:            "45 31 E4 90",
+            expectedOriginal: "41 0F 97 C4",
+            patchOffset:      25
+        ),
+
         // AttackState::OnUpdate: bypass the target visibility gate before firing.
         ["AttackState_SkipSteadyFireShortcut"] = (
             signature:        "BA 01 00 00 00 48 89 DF 48 89 C6 E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 89 DF E8 ? ? ? ?",
@@ -88,12 +113,39 @@ internal static class LinuxPatchDefinitions
             patchOffset:      18
         ),
 
+        // FireWeaponAtEnemy: ignore projected sniper spread (range * inaccuracy).
+        // Keep the preceding weapon/target validity checks and fire command.
+        ["AttackState_SkipSniperSpreadCheck"] = (
+            signature:        "F3 0F 10 05 ? ? ? ? 66 41 0F 6E EE 0F 2F E8 0F 87 ? ? ? ? 48 89 DF E8 ? ? ? ? 48 89 DF F3 0F 10 40 08",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 87 ? ? ? ?",
+            patchOffset:      16
+        ),
+
         // AttackState::OnEnter: always take the high-skill dodge chance path.
         ["AttackState_DodgeChance100_Always"] = (
             signature:        "48 89 DF F3 0F 11 85 48 FE FF FF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 44 8B 2D ? ? ? ? 45 89 EE",
             patch:            "90 90 90 90 90 90",
             expectedOriginal: "0F 84 ? ? ? ?",
             patchOffset:      18
+        ),
+
+        // AttackState::OnUpdate: ignore CanSeeSniper as a reason to retreat.
+        // Keep the independent pinned-down and outnumbered conditions.
+        ["AttackState_RetreatOnSniper_Disable"] = (
+            signature:        "80 BB 99 5C 00 00 00 0F 85 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      7
+        ),
+
+        // CBtActionAttack: bypass the trace-result gate before firing, matching
+        // Windows' historical CanStrafe key; this is not a retreat/look-at gate.
+        ["AttackState_CanStrafe_jne"] = (
+            signature:        "0F 2F 8B AC 00 00 00 0F 82 ? ? ? ? 48 89 DF E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 8B 7B 18",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 84 ? ? ? ?",
+            patchOffset:      23
         ),
 
         // Keep bot movement behavior when seeing enemies.
@@ -135,6 +187,86 @@ internal static class LinuxPatchDefinitions
             patch:            "BE 02 00 00 00",
             expectedOriginal: "BE 03 00 00 00",
             patchOffset:      18
+        ),
+
+        // Historical Vision_* keys actually control AttackState::Dodge on Windows.
+        // Use the same native behavior here, without UpdateLookAround code caves.
+        // Enter dodge selection regardless of m_isEnemySniperVisible; this also
+        // bypasses the distance and IsEnemyLookingAtMe tests below.
+        ["Vision_AlwaysWatchApproachPoints"] = (
+            signature:        "41 80 BE 99 5C 00 00 00 4C 8D 6D A8 0F 85 ? ? ? ? 0F 2F 05 ? ? ? ? 0F 86 ? ? ? ? 48 C7 43 08 00 00 00 00",
+            patch:            "E9 00 00 00 00 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      12
+        ),
+
+        // Dodge direction selection: bypass skill > 0.5, not a vision check.
+        ["Vision_ApproachBody_SkipSkillCheck"] = (
+            signature:        "49 8B 46 08 F3 0F 10 48 0C 0F 2F 0D ? ? ? ? 0F B6 43 43 0F 86 ? ? ? ? 41 80 BE 99 5C 00 00 00 74 27",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 86 ? ? ? ?",
+            patchOffset:      20
+        ),
+
+        // Dodge direction selection: bypass m_isEnemySniperVisible,
+        // not a hiding-spot check. Preserve the following first-dodge flag.
+        ["Vision_ApproachBody_SkipHidingSpotCheck"] = (
+            signature:        "41 80 BE 99 5C 00 00 00 74 27 84 C0 0F 85 ? ? ? ? 83 7B 08 01 B8 02 00 00 00",
+            patch:            "90 90",
+            expectedOriginal: "74 27",
+            patchOffset:      8
+        ),
+
+        // Dodge: bypass the 2000-unit enemy-distance limit, not speed.
+        ["Vision_SkipIsMovingGate"] = (
+            signature:        "41 80 BE 99 5C 00 00 00 4C 8D 6D A8 0F 85 ? ? ? ? 0F 2F 05 ? ? ? ? 0F 86 ? ? ? ? 48 C7 43 08 00 00 00 00",
+            patch:            "E9 00 00 00 00 90",
+            expectedOriginal: "0F 86 ? ? ? ?",
+            patchOffset:      25
+        ),
+
+        // Dodge: do not clear the action when the inlined IsEnemyLookingAtMe
+        // dot-product test fails. Keep the timer and movement feasibility checks.
+        ["Vision_AlwaysEnterApproachBody"] = (
+            signature:        "F3 0F 59 4D C4 F3 0F 58 C1 66 0F EF C9 0F 2F C8 0F 86 ? ? ? ? 66 0F 1F 44 00 00 4C 8D 25 ? ? ? ?",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 86 ? ? ? ?",
+            patchOffset:      16
+        ),
+
+        // IsNoticable(player, visibleParts), called after IsVisible succeeds:
+        // always notice a visible enemy. Do not return true from IsVisible itself.
+        ["IsNoticable_AlwaysTrue"] = (
+            signature:        "55 48 89 E5 41 56 41 89 D6 41 55 41 54 49 89 FC 48 89 F7 53 48 89 F3 48 83 EC 20 E8 ? ? ? ? 48 85 C0 74 2D",
+            patch:            "B0 01 C3 90",
+            expectedOriginal: "55 48 89 E5",
+            patchOffset:      0
+        ),
+
+        // IsVisible(player): skip only its initial center-point FOV gate.
+        ["InViewCone_RemoveOuterFOV"] = (
+            signature:        "45 84 F6 0F 85 ? ? ? ? 48 89 DF FF 90 C0 02 00 00",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 85 ? ? ? ?",
+            patchOffset:      3
+        ),
+
+        // IsVisible(position): skip FOV for body samples/positions.
+        // Preserve smoke, entity-validity and line-of-sight checks in both overloads.
+        ["InViewCone_RemoveInnerFOV"] = (
+            signature:        "80 BD 84 FE FF FF 00 74 18 48 8B 7B 18 48 8B B5 88 FE FF FF 48 8B 07 FF 90 B8 09 00 00 84 C0 74 C2",
+            patch:            "EB 18",
+            expectedOriginal: "74 18",
+            patchOffset:      7
+        ),
+
+        // InvestigateNoiseState::OnEnter: bypass the SELF_DEFENSE disposition
+        // gate in the noise-response path. The old signature matched chicken AI.
+        ["InvestigateNoise_SkipSelfDefenseCheck"] = (
+            signature:        "83 BB F0 52 00 00 02 0F 84 ? ? ? ? F3 0F 10 83 D8 52 00 00 31 C0 66 0F EF DB",
+            patch:            "90 90 90 90 90 90",
+            expectedOriginal: "0F 84 ? ? ? ?",
+            patchOffset:      7
         ),
 
         // CCSBot::OnAudibleEvent: accept sounds regardless of distance.
