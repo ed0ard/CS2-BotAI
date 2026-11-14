@@ -41,10 +41,7 @@ public class BotAI : BasePlugin
                 || !pawn.BotAllowActive)
                 return HookResult.Continue;
 
-            var gameRules = Utilities
-                .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
-                .FirstOrDefault()?.GameRules;
-
+            var gameRules = Utilities.GetGameRules();
             if (gameRules == null || gameRules.BombPlanted) return HookResult.Continue;
 
             UpdateBotBombState(pawn, player.PlayerName, offsets);
