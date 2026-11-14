@@ -18,8 +18,7 @@
     "library": "server",
     "comment": [
       "Source: CCSBot::Reset.",
-      "The patch sets m_hasVisitedEnemySpawn during bot reset.",
-      "Bots start with the enemy spawn marked as visited."
+      "Bot reset sets m_hasVisitedEnemySpawn to true."
     ],
     "windows": {
       "signature": "4C 89 B7 ? ? 00 00 48 8D 8C 24 ? ? ? ? 44 88 B7 FD 05 00 00 E8 ? ? ? ? F3 0F 10 87 ? ? 00 00 48 8B F0",
@@ -81,8 +80,7 @@
     "library": "server",
     "comment": [
       "Source: EscapeFromBombState::OnEnter.",
-      "The patch replaces the tail call to EquipKnife with a return.",
-      "Bots keep their weapon when they start fleeing the bomb."
+      "Bots return without calling EquipKnife when they start fleeing the bomb."
     ],
     "windows": {
       "signature": "C6 83 ? ? 00 00 00 C6 83 ? ? 00 00 00 48 83 C4 20 5B E9",
@@ -143,7 +141,7 @@
     "comment": [
       "Source: CCSBot::ReloadCheck.",
       "const float reloadAmmoRatio = 0.6f;",
-      "The reload ammo threshold drops from 60% to 20%."
+      "Reload threshold drops from 60% to 20%."
     ],
     "windows": {
       "signature": "66 0F 6E C0 0F 5B C0 F3 0F 5E F0 F3 0F 10 05 ? ? ? ? 0F 2F C6 0F 82",
@@ -198,8 +196,7 @@
     "comment": [
       "Source: MoveToState::OnUpdate.",
       "if (me->IsVisible(*bombPos)) { me->DefuseBomb(); }",
-      "The 72-unit 3D and 48-unit 2D distance checks remain.",
-      "Bots skip the visibility check before defusing."
+      "Bots skip visibility but keep the 72-unit 3D and 48-unit 2D distance checks."
     ],
     "windows": {
       "signature": "0F 2F C8 0F 86 ? ? ? ? 45 33 C9 45 33 C0 48 8B D3 48 8B CE E8 ? ? ? ? 84 C0 0F 84 ? ? ? ? 48 8B CE",
@@ -218,7 +215,7 @@
   "AttackState_SkipFireRateCheck": {
     "library": "server",
     "comment": [
-      "The Linux patch skips the CBtActionAttack timestamp check at +0xAC.",
+      "Linux bypasses the CBtActionAttack timestamp check at +0xAC.",
       "Bots skip the next-shot timing check."
     ],
     "windows": {
@@ -238,10 +235,9 @@
   "SprayAllDistances_ForceHoldTrigger": {
     "library": "server",
     "comment": [
-      "Windows normally sets the release-between-shots flag when the fire delay exceeds one tick.",
-      "The patch clears the flag (bpl on Windows, r12b on Linux).",
-      "Linux keeps the trigger output write.",
-      "Bots hold the trigger instead of tapping or bursting."
+      "Without the patch, Windows releases the trigger between shots when fire delay exceeds one tick.",
+      "Clearing the flag (bpl on Windows, r12b on Linux) keeps the trigger held.",
+      "Linux keeps the trigger output write."
     ],
     "windows": {
       "signature": "76 12 48 8B 05 ? ? ? ? 0F 2F 40 30 76 05 40 B5 01 EB 03 40 32 ED",
@@ -260,8 +256,7 @@
   "AttackState_SkipSteadyFireShortcut": {
     "library": "server",
     "comment": [
-      "Windows bypasses HasViewBeenSteady. Linux bypasses the target visibility check.",
-      "Bots skip the visibility or steady-view firing check."
+      "Windows skips HasViewBeenSteady. Linux skips the target visibility check."
     ],
     "windows": {
       "signature": "0F B6 F0 84 C0 74 3C 48 8B 4B 18 48 8B 11 FF 92 90 00 00 00",
@@ -280,8 +275,7 @@
   "AttackState_SkipZoomFireShortcut": {
     "library": "server",
     "comment": [
-      "Windows bypasses IsWaitingForZoom. Linux bypasses the nearby enemy gunfire check.",
-      "Bots skip the nearby-gunfire or zoom-wait check."
+      "Windows skips IsWaitingForZoom. Linux skips the nearby gunfire check."
     ],
     "windows": {
       "signature": "FF 90 ? ? 00 00 84 C0 74 15 48 8D 8B ? ? 00 00 48 89 AB",
@@ -302,9 +296,8 @@
     "comment": [
       "Source: CCSBot::FireWeaponAtEnemy.",
       "Projected spread is rangeToEnemy times weapon inaccuracy.",
-      "The original path returns if projected spread exceeds 50.0 for the AWP or 25.0 for other sniper rifles.",
-      "Weapon and target validity checks remain.",
-      "Snipers fire regardless of projected spread."
+      "The patch removes the spread cap (AWP: 50.0, other sniper rifles: 25.0).",
+      "Weapon and target validity checks remain."
     ],
     "windows": {
       "signature": "84 C0 74 0A F3 0F 10 ? ? ? ? ? EB 08 F3 0F 10 ? ? ? ? ? ? 0F 2F ? 0F 87 ? ? ? ?",
@@ -388,10 +381,8 @@
     "library": "server",
     "comment": [
       "Source: AttackState::OnEnter.",
-      "The original high-chance condition is skill > 0.5 && (Outnumbered || CanSeeSniper).",
-      "That path sets dodge chance to 100.",
-      "Windows jumps directly to the movaps that loads the high dodge chance.",
-      "Linux removes the conditional jump around the high-chance path."
+      "Without the patch, skill > 0.5 && (Outnumbered || CanSeeSniper) sets dodge chance to 100.",
+      "Windows jumps directly to movaps. Linux removes the branch that skips the 100 path."
     ],
     "windows": {
       "signature": "0F 28 F0 F3 0F 59 35 ? ? ? ? 76 ?",
@@ -411,10 +402,8 @@
     "library": "server",
     "comment": [
       "Source: AttackState::OnUpdate.",
-      "The original Windows retreat condition is CanSeeSniper && !IsSniper.",
-      "Windows keeps the original branch displacement.",
-      "Linux keeps the pinned-down and outnumbered checks.",
-      "Enemy snipers no longer trigger retreat on this path."
+      "Windows bypasses the CanSeeSniper && !IsSniper retreat path without changing the branch target.",
+      "Linux drops the sniper retreat check but keeps the pinned-down and outnumbered checks."
     ],
     "windows": {
       "signature": "74 ? 48 8B CE E8 ? ? ? ? 84 C0 74 ? 48 8B CE E8 ? ? ? ? 84 C0",
@@ -491,9 +480,8 @@
     "library": "server",
     "comment": [
       "Source: AttackState::Dodge.",
-      "Linux also bypasses the distance and IsEnemyLookingAtMe checks on this path.",
-      "The Linux patch leaves the original jump displacement in place.",
-      "Dodge selection does not require a visible enemy sniper."
+      "Dodge selection no longer requires a visible enemy sniper.",
+      "Linux also skips distance and IsEnemyLookingAtMe without changing the jump target."
     ],
     "windows": {
       "signature": "80 BF ? ? 00 00 00 75 25 0F 2F",
@@ -513,9 +501,8 @@
     "library": "server",
     "comment": [
       "Source: AttackState::Dodge.",
-      "The original check requires skill > 0.5.",
-      "The Windows signature anchors on the skill comparison and the following CanSeeSniper check.",
-      "Dodge direction ignores skill."
+      "Dodge direction no longer requires skill > 0.5.",
+      "Windows matches the skill comparison and the following CanSeeSniper check."
     ],
     "windows": {
       "signature": "F3 0F 10 40 0C 0F 2F ? 76 ? 80 BF ? 5C 00 00 00 74 ?",
@@ -556,9 +543,8 @@
     "library": "server",
     "comment": [
       "Source: AttackState::Dodge.",
-      "The Linux gate checks distance, not speed.",
-      "The Linux patch leaves the original jump displacement in place.",
-      "The Linux patch skips the 2000-unit dodge limit."
+      "Linux skips the 2000-unit distance limit, not a speed check.",
+      "The jump target stays the same."
     ],
     "windows": {
       "signature": "0F 2F 35 ? ? ? ? 77 ? 49 8B ? 48 8B CF E8 ? ? ? ? 84 C0 75 ?",
@@ -579,7 +565,7 @@
     "comment": [
       "Source: AttackState::Dodge.",
       "Linux keeps the timer and movement feasibility checks.",
-      "Windows keeps the original branch displacement.",
+      "Windows keeps the branch target.",
       "Bots keep dodging when the look-direction check fails."
     ],
     "windows": {
@@ -621,9 +607,8 @@
     "library": "server",
     "comment": [
       "Source: CCSBot::Upkeep.",
-      "The original non-sniper drift adds driftAmplitude * BotCOS(33 * curtime) to m_lookYaw.",
-      "The shared cosine helper remains unchanged.",
-      "The cosine term no longer adds view drift."
+      "The patch removes driftAmplitude * BotCOS(33 * curtime) from non-sniper yaw (m_lookYaw).",
+      "The shared cosine helper stays unchanged."
     ],
     "windows": {
       "signature": "F3 0F 10 35 ? ? ? ? 48 8B 05 ? ? ? ? F3 0F 10 40 30 F3 0F 59 05 ? ? ? ? E8 ? ? ? ? F3 0F 59 C6 F3 0F 58 87 ? ? 00 00 F3 0F 11 87 ? ? 00 00",
@@ -643,9 +628,8 @@
     "library": "server",
     "comment": [
       "Source: CCSBot::Upkeep.",
-      "The original non-sniper drift adds driftAmplitude * BotSIN(13 * curtime) to m_lookPitch.",
-      "The shared sine helper remains unchanged.",
-      "The sine term no longer adds view drift."
+      "The patch removes driftAmplitude * BotSIN(13 * curtime) from non-sniper pitch (m_lookPitch).",
+      "The shared sine helper stays unchanged."
     ],
     "windows": {
       "signature": "F3 0F 11 87 ? ? 00 00 48 8B 05 ? ? ? ? F3 0F 10 40 30 F3 0F 59 05 ? ? ? ? E8 ? ? ? ? F3 0F 59 C6 F3 0F 58 87 ? ? 00 00 F3 0F 11 87 ? ? 00 00",
@@ -685,7 +669,7 @@
     "library": "server",
     "comment": [
       "Source: IdleState::OnUpdate.",
-      "This is the T-side fallback when the bomb is planted but the site is unknown.",
+      "T bots use this path when the bomb is planted but the site is unknown.",
       "GetPlantedBombsite replaces GetNextBombsiteToSearch.",
       "Both call displacements are build-specific."
     ],
@@ -730,8 +714,7 @@
     "comment": [
       "Source: CCSBot::OnBombPickedUp.",
       "const float bombPickupHearRangeSq = 1000.0f * 1000.0f;",
-      "The original CT tracking path requires LengthSqr() < bombPickupHearRangeSq.",
-      "CT bots track bomb pickups at any distance."
+      "CT tracking no longer requires LengthSqr() < bombPickupHearRangeSq."
     ],
     "windows": {
       "signature": "0F 2F ? 76 23 48 8B ? ? 5E 00 00 E8",
@@ -751,9 +734,8 @@
     "library": "server",
     "comment": [
       "Source: CCSBot::OnAudibleEvent.",
-      "The original hearing gate requires newNoiseDist < range.",
-      "Weapon fire, footsteps, reloads and grenade sounds use this common handler.",
-      "Bots accept sound events at any distance."
+      "Bots hear events without checking newNoiseDist < range.",
+      "Gunfire, footsteps, reloads and grenades use this handler."
     ],
     "windows": {
       "signature": "F3 44 0F 51 CA EB 0C 0F 28 C2 E8 ? ? ? ? 44 0F 28 C8 45 0F 2F D1 0F 86 ? ? ? ?",
@@ -773,8 +755,8 @@
     "library": "server",
     "comment": [
       "Source: CSGameState::OnBombPlanted.",
-      "Windows removes the terrorist-team gate and keeps the plantingPlayer null check.",
-      "Linux forces the branch to the planted-site update and keeps the original displacement.",
+      "Windows skips the T-team check but still requires plantingPlayer.",
+      "Linux always takes the jump to the site update.",
       "All bots learn the planted site."
     ],
     "windows": {
@@ -858,8 +840,8 @@
     "comment": [
       "Source: CCSBot::CheckGrenadeDanger.",
       "ClearLookAt and the return value remain unchanged.",
-      "The patch bypasses the avoidance SetLookAt and StopAiming block.",
-      "The Windows signature uses the trailing xor al, al as an anchor without patching it."
+      "Bots skip the avoidance SetLookAt and StopAiming calls.",
+      "Windows uses the trailing xor al, al as an unmodified anchor."
     ],
     "windows": {
       "signature": "E8 ? ? ? ? 49 8B 06 C6 80 ? 5C 00 00 00 32 C0",
