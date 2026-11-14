@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 
 namespace BotAI;
 
-internal sealed record PatchInfo(string Name, nint Address, byte[] OriginalBytes);
+internal sealed record PatchInfo(string Name, MemoryPatch Site, byte[] OriginalBytes);
 
 [MinimumApiVersion(304)]
 public class BotAI : BasePlugin
@@ -75,13 +75,37 @@ public class BotAI : BasePlugin
             sites.Add((definition, checked(address + definition.Offset)));
         }
 
-        foreach (var (definition, address) in sites)
-            WritePatch(definition, address);
+        var byAddress = sites.OrderBy(site => site.Address).ToArray();
+        for (int i = 1; i < byAddress.Length; i++)
+        {
+            var previous = byAddress[i - 1];
+            var current = byAddress[i];
+            if (current.Address < checked(previous.Address + previous.Definition.Patch.Length))
+                throw new InvalidDataException($"Patches '{previous.Definition.Name}' and '{current.Definition.Name}' overlap at 0x{current.Address:X}; no patches written.");
+        }
+
+        try
+        {
+            foreach (var (definition, address) in sites)
+            {
+                try { WritePatch(definition, address); }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"Could not apply '{definition.Name}' at 0x{address:X}.", ex);
+                }
+            }
+        }
+        catch
+        {
+            RestoreAppliedPatches();
+            throw;
+        }
     }
 
     private void WritePatch(PatchDefinition definition, nint addr)
     {
         var (name, _, _, expectedOriginal, patchBytes) = definition;
+        var site = MemoryPatch.Capture(addr, patchBytes.Length);
         var origBytes = new byte[patchBytes.Length];
         Marshal.Copy(addr, origBytes, 0, origBytes.Length);
         if (!MatchesOriginal(origBytes, expectedOriginal))
@@ -92,31 +116,33 @@ public class BotAI : BasePlugin
             return;
         }
 
-        if (!MemoryPatch.SetMemAccess(addr, patchBytes.Length))
-        {
-            Logger.LogError("Could not make '{Patch}' writable.", name);
-            return;
-        }
-        Marshal.Copy(patchBytes, 0, addr, patchBytes.Length);
-        _appliedPatches.Add(new PatchInfo(name, addr, origBytes));
+        // A failed write can leave modified bytes.
+        _appliedPatches.Add(new PatchInfo(name, site, origBytes));
+        site.Write(patchBytes);
         Logger.LogInformation("'{Patch}' patched at 0x{Address:X} ({Length} bytes).", name, addr, patchBytes.Length);
     }
 
     private void RestoreAppliedPatches()
     {
-        foreach (var patch in _appliedPatches)
+        int total = _appliedPatches.Count;
+        for (int i = total - 1; i >= 0; i--)
         {
+            var patch = _appliedPatches[i];
             try
             {
-                if (MemoryPatch.SetMemAccess(patch.Address, patch.OriginalBytes.Length))
-                    Marshal.Copy(patch.OriginalBytes, 0, patch.Address, patch.OriginalBytes.Length);
+                patch.Site.Write(patch.OriginalBytes);
+                _appliedPatches.RemoveAt(i);
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Could not restore '{Patch}'.", patch.Name);
+                Logger.LogError(ex, "Could not fully restore '{Patch}'.", patch.Name);
             }
         }
-        _appliedPatches.Clear();
+        if (_appliedPatches.Count == 0)
+            Logger.LogInformation("Restored {Count} patches.", total);
+        else
+            Logger.LogCritical("Restored {Restored}/{Total} patches. Restart the server before reloading BotAI.",
+                total - _appliedPatches.Count, total);
     }
 
     private static bool MatchesOriginal(ReadOnlySpan<byte> actual, ReadOnlySpan<byte?> expected)
@@ -126,34 +152,22 @@ public class BotAI : BasePlugin
         return true;
     }
 
-    private static bool IsValid(nint addr)
-    {
-        if (addr == nint.Zero) return false;
-        try { Marshal.ReadByte(addr); return true; }
-        catch { return false; }
-    }
-
-    private bool UpdateBotBombState(CCSPlayerPawn pawn, string playerName, BotOffsets offsets)
+    private void UpdateBotBombState(CCSPlayerPawn pawn, string playerName, BotOffsets offsets)
     {
         try
         {
-            if (pawn?.Bot?.Handle is not { } handle || handle == nint.Zero) return false;
-            if (!IsValid(handle)) return false;
+            if (pawn.Bot?.Handle is not { } handle || handle == nint.Zero) return;
 
             nint gsPtr = handle + offsets.GameState;
-            if (!IsValid(gsPtr)) return false;
-            if (Marshal.ReadByte(gsPtr + offsets.IsRoundOver) != 0) return true;
+            if (Marshal.ReadByte(gsPtr + offsets.IsRoundOver) != 0) return;
 
+            // The bomb state is writable bot data.
             nint bombAddr = gsPtr + offsets.BombState;
-            if (!IsValid(bombAddr)) return false;
-            if (!MemoryPatch.SetMemAccess(bombAddr, sizeof(int))) return false;
             if (Marshal.ReadInt32(bombAddr) != 0) Marshal.WriteInt32(bombAddr, 0);
-            return true;
         }
         catch (Exception ex)
         {
             Logger.LogError($"UpdateBotBombState({playerName}): {ex.Message}");
-            return false;
         }
     }
 }
