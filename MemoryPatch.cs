@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace Common;
 
-internal sealed partial class MemoryPatch(nint address, int length, MemoryPatch.Region[] regions, bool linux)
+internal sealed partial class MemoryPatch(nint address, int length, MemoryPatch.Region[] regions)
 {
     private const int LinuxRead = 1, LinuxWrite = 2, LinuxExecute = 4;
     private const uint WindowsCommitted = 0x1000, WindowsGuard = 0x100;
@@ -41,9 +41,8 @@ internal sealed partial class MemoryPatch(nint address, int length, MemoryPatch.
         nint pageMask = Environment.SystemPageSize - 1;
         nint start = address & ~pageMask;
         nint end = checked(address + length + pageMask) & ~pageMask;
-        bool linux = OperatingSystem.IsLinux();
-        var regions = linux ? LinuxRegions(start, end) : WindowsRegions(start, end);
-        return new MemoryPatch(address, length, regions.ToArray(), linux);
+        var regions = OperatingSystem.IsWindows() ? WindowsRegions(start, end) : LinuxRegions(start, end);
+        return new MemoryPatch(address, length, regions.ToArray());
     }
 
     private static IEnumerable<Region> WindowsRegions(nint start, nint end)
@@ -99,7 +98,7 @@ internal sealed partial class MemoryPatch(nint address, int length, MemoryPatch.
                 SetProtection(regions[changed], regions[changed].WritableProtection, "make writable");
 
             Marshal.Copy(bytes, 0, address, length);
-            if (!linux && !FlushInstructionCache(-1, address, (nuint)length))
+            if (OperatingSystem.IsWindows() && !FlushInstructionCache(-1, address, (nuint)length))
                 throw NativeError($"FlushInstructionCache at 0x{address:X}");
         }
         catch (Exception ex)
@@ -118,11 +117,11 @@ internal sealed partial class MemoryPatch(nint address, int length, MemoryPatch.
             throw new AggregateException($"Memory write at 0x{address:X} did not complete cleanly.", errors);
     }
 
-    private void SetProtection(Region region, int protection, string operation)
+    private static void SetProtection(Region region, int protection, string operation)
     {
-        bool ok = linux
-            ? MProtect(region.Address, region.Length, protection) == 0
-            : VirtualProtect(region.Address, region.Length, protection, out _);
+        bool ok = OperatingSystem.IsWindows()
+            ? VirtualProtect(region.Address, region.Length, protection, out _)
+            : MProtect(region.Address, region.Length, protection) == 0;
         if (!ok)
             throw NativeError($"Could not {operation} at 0x{region.Address:X}");
     }

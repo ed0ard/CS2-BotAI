@@ -28,14 +28,13 @@ internal sealed record Gamedata(BotOffsets Offsets, IReadOnlyList<PatchDefinitio
         {
             if (entry.NameEquals("offsets")) continue;
 
-            string label = $"{path}: {entry.Name}/{platform}";
             try
             {
                 definitions.Add(ReadPatch(entry, platform));
             }
             catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or FormatException)
             {
-                throw new InvalidDataException($"{label}: {ex.Message}", ex);
+                throw new InvalidDataException($"{path}: {entry.Name}/{platform}: {ex.Message}", ex);
             }
         }
         if (definitions.Count == 0)
@@ -72,9 +71,11 @@ internal sealed record Gamedata(BotOffsets Offsets, IReadOnlyList<PatchDefinitio
         if (patch.Length != expected.Length)
             throw new FormatException("Patch and expected original must have the same length.");
 
-        return new PatchDefinition(entry.Name, string.Join(" ", signature.Select(b => b?.ToString("X2") ?? "?")),
-            offset, expected, patch);
+        return new PatchDefinition(entry.Name, FormatPattern(signature), offset, expected, patch);
     }
+
+    internal static string FormatPattern(byte?[] bytes) =>
+        string.Join(" ", bytes.Select(b => b?.ToString("X2") ?? "?"));
 
     private static byte?[] ParsePattern(string? pattern, bool allowWildcard)
     {
@@ -83,7 +84,6 @@ internal sealed record Gamedata(BotOffsets Offsets, IReadOnlyList<PatchDefinitio
             throw new FormatException("Empty byte pattern.");
 
         var bytes = new byte?[tokens.Length];
-        bool hasFixedByte = false;
         for (int i = 0; i < tokens.Length; i++)
         {
             string token = tokens[i];
@@ -92,9 +92,8 @@ internal sealed record Gamedata(BotOffsets Offsets, IReadOnlyList<PatchDefinitio
                 throw new FormatException($"Invalid byte token '{token}'.");
 
             bytes[i] = value;
-            hasFixedByte = true;
         }
-        if (!hasFixedByte)
+        if (Array.TrueForAll(bytes, b => b is null))
             throw new FormatException("Byte pattern cannot contain only wildcards.");
 
         return bytes;
