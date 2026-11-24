@@ -11,7 +11,7 @@ namespace BotAI;
 
 internal sealed record PatchInfo(string Name, MemoryPatch Site, byte[] OriginalBytes);
 
-[MinimumApiVersion(304)]
+[MinimumApiVersion(380)]
 public class BotAI : BasePlugin
 {
     public override string ModuleName => "Bot AI - Patches";
@@ -25,30 +25,27 @@ public class BotAI : BasePlugin
     public override void Load(bool hotReload)
     {
         Logger.LogInformation("Bot AI Patches loading...");
-        var gamedata = Gamedata.Load(Path.Combine(ModuleDirectory, "gamedata.json"), OperatingSystem.IsLinux() ? "linux" : "windows");
-        var (offsets, patches) = gamedata;
-        string serverPath = GameUtils.GetModulePath("server");
-        ApplyPatches(patches, signature => NativeAPI.FindSignature(serverPath, signature));
-
-        RegisterEventHandler<EventPlayerSpawn>((@event, info) =>
+        string platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux"
+            : throw new PlatformNotSupportedException("BotAI requires Windows or Linux.");
+        var (offsets, patches) = Gamedata.Load(Path.Combine(ModuleDirectory, "gamedata.json"), platform);
+        try
         {
-            var player = @event.Userid;
-            if (player?.IsValid != true || !player.IsBot) return HookResult.Continue;
-
-            var pawn = player.PlayerPawn.Value;
-            if (pawn?.IsValid != true
-                || player.Team <= CsTeam.Spectator
-                || !pawn.BotAllowActive)
-                return HookResult.Continue;
-
-            var gameRules = Utilities.GetGameRules();
-            if (gameRules == null || gameRules.BombPlanted) return HookResult.Continue;
-
-            UpdateBotBombState(pawn, player.PlayerName, offsets);
-            return HookResult.Continue;
-        });
-
-        Logger.LogInformation($"Applied {_appliedPatches.Count}/{patches.Count} patches.");
+            ApplyPatches(patches);
+            if (_appliedPatches.Exists(patch => patch.Name == "GameState_Reset"))
+            {
+                RegisterEventHandler<EventPlayerSpawn>((ev, _) =>
+                {
+                    OnPlayerSpawn(ev, offsets);
+                    return HookResult.Continue;
+                });
+            }
+            Logger.LogInformation("Applied {Applied}/{Total} patches.", _appliedPatches.Count, patches.Count);
+        }
+        catch
+        {
+            RestoreAppliedPatches();
+            throw;
+        }
     }
 
     public override void Unload(bool hotReload)
@@ -57,13 +54,14 @@ public class BotAI : BasePlugin
         RestoreAppliedPatches();
     }
 
-    internal void ApplyPatches(IReadOnlyList<PatchDefinition> definitions, Func<string, nint> resolveSignature)
+    private void ApplyPatches(IReadOnlyList<PatchDefinition> definitions)
     {
         // Patches can overwrite bytes used by other signatures.
         var sites = new List<(PatchDefinition Definition, nint Address)>();
+        string serverPath = Addresses.ServerPath;
         foreach (var definition in definitions)
         {
-            nint address = resolveSignature(definition.Signature);
+            nint address = NativeAPI.FindSignature(serverPath, definition.Signature);
             if (address == 0)
             {
                 Logger.LogError("'{Patch}': signature not found.", definition.Name);
@@ -81,21 +79,13 @@ public class BotAI : BasePlugin
                 throw new InvalidDataException($"Patches '{previous.Definition.Name}' and '{current.Definition.Name}' overlap at 0x{current.Address:X}; no patches written.");
         }
 
-        try
+        foreach (var (definition, address) in sites)
         {
-            foreach (var (definition, address) in sites)
+            try { WritePatch(definition, address); }
+            catch (Exception ex)
             {
-                try { WritePatch(definition, address); }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Could not apply '{definition.Name}' at 0x{address:X}.", ex);
-                }
+                throw new InvalidOperationException($"Could not apply '{definition.Name}' at 0x{address:X}.", ex);
             }
-        }
-        catch
-        {
-            RestoreAppliedPatches();
-            throw;
         }
     }
 
@@ -108,7 +98,7 @@ public class BotAI : BasePlugin
         if (!MatchesOriginal(origBytes, expectedOriginal))
         {
             Logger.LogError("'{Patch}': byte mismatch. Expected [{Expected}] got [{Actual}].", name,
-                string.Join(" ", expectedOriginal.Select(b => b?.ToString("X2") ?? "?")),
+                Gamedata.FormatPattern(expectedOriginal),
                 Convert.ToHexString(origBytes));
             return;
         }
@@ -149,8 +139,14 @@ public class BotAI : BasePlugin
         return true;
     }
 
-    private void UpdateBotBombState(CCSPlayerPawn pawn, string playerName, BotOffsets offsets)
+    private void OnPlayerSpawn(EventPlayerSpawn ev, BotOffsets offsets)
     {
+        var player = ev.Userid;
+        if (player?.IsValid != true || !player.IsBot || player.Team <= CsTeam.Spectator) return;
+        var pawn = player.PlayerPawn.Value;
+        if (pawn?.IsValid != true || !pawn.BotAllowActive) return;
+        if (Utilities.GetGameRules() is not { BombPlanted: false }) return;
+
         try
         {
             if (pawn.Bot?.Handle is not { } handle || handle == nint.Zero) return;
@@ -158,13 +154,11 @@ public class BotAI : BasePlugin
             nint gsPtr = handle + offsets.GameState;
             if (Marshal.ReadByte(gsPtr + offsets.IsRoundOver) != 0) return;
 
-            // The bomb state is writable bot data.
-            nint bombAddr = gsPtr + offsets.BombState;
-            if (Marshal.ReadInt32(bombAddr) != 0) Marshal.WriteInt32(bombAddr, 0);
+            Marshal.WriteInt32(gsPtr + offsets.BombState, 0);
         }
         catch (Exception ex)
         {
-            Logger.LogError($"UpdateBotBombState({playerName}): {ex.Message}");
+            Logger.LogError(ex, "Could not reset bomb state for {Player}.", player.PlayerName);
         }
     }
 }
