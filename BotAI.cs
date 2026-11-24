@@ -15,7 +15,7 @@ internal sealed record PatchInfo(string Name, MemoryPatch Site, byte[] OriginalB
 public class BotAI : BasePlugin
 {
     public override string ModuleName => "Bot AI - Patches";
-    public override string ModuleVersion => "1.8.15";
+    public override string ModuleVersion => "1.9.0";
     public override string ModuleAuthor => "K4ryuu & Austin (updated by ed0ard & XBribo & unicbm & Misaka17032 & AmagiReina)";
     public override string ModuleDescription =>
         "Improve and fix bots' behavior comprehensively";
